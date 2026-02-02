@@ -10,6 +10,7 @@
     <style>
       body { font-family: 'Cairo', sans-serif; margin: 0; padding: 0; }
       #root { min-height: 100vh; }
+      .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #020617; color: white; }
     </style>
     <script type="importmap">
 {
@@ -30,10 +31,14 @@
   </head>
   <body class="bg-slate-50 text-slate-900">
     <div id="root">
-      <div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; direction: ltr;">
-        Loading System Components...
+      <div class="loading-screen">
+        <div style="width: 40px; height: 40px; border: 4px solid #312e81; border-top: 4px solid #6366f1; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+        <p style="margin-top: 20px; font-weight: bold; letter-spacing: 1px;">جاري تشغيل النظام...</p>
       </div>
     </div>
+    <style>
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>

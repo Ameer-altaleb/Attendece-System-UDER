@@ -54,11 +54,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const refreshData = async () => {
     setIsLoading(true);
     
+    // Safety timeout to prevent infinite white screen
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        console.warn("Data loading timed out, using local fallback.");
+        setIsLoading(false);
+      }
+    }, 5000);
+
     if (!checkSupabaseConnection()) {
       console.warn("Supabase key is missing. Using local data.");
       setAdmins(INITIAL_ADMINS);
       setCenters(INITIAL_CENTERS);
       setEmployees(INITIAL_EMPLOYEES);
+      clearTimeout(timeout);
       setIsLoading(false);
       return;
     }
@@ -87,28 +96,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (errC) throw errC;
 
       if (!a || a.length === 0) {
-        await supabase.from('admins').insert(INITIAL_ADMINS);
         setAdmins(INITIAL_ADMINS);
       } else {
         setAdmins(a);
       }
 
       if (c && c.length > 0) setCenters(c);
-      else {
-         await supabase.from('centers').insert(INITIAL_CENTERS);
-         setCenters(INITIAL_CENTERS);
-      }
+      else setCenters(INITIAL_CENTERS);
 
       if (e) setEmployees(e);
+      else setEmployees(INITIAL_EMPLOYEES);
+
       if (att) setAttendance(att);
       if (h) setHolidays(h);
       if (n) setNotifications(n);
       if (t && t.length > 0) setTemplates(t);
       if (s) setSettings(s);
-      else {
-        await supabase.from('settings').insert([{ id: 1, ...INITIAL_SETTINGS }]);
-        setSettings(INITIAL_SETTINGS);
-      }
       
     } catch (error: any) {
       console.error('Database connection error:', error.message);
@@ -116,6 +119,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCenters(INITIAL_CENTERS);
       setEmployees(INITIAL_EMPLOYEES);
     } finally {
+      clearTimeout(timeout);
       setIsLoading(false);
     }
   };
