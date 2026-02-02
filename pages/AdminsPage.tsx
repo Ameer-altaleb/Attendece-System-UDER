@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { UserCog, Plus, Edit2, Trash2, X, Shield, Key, Mail, User, ShieldCheck, Lock, Building2, Check } from 'lucide-react';
+import { UserCog, Plus, Edit2, Trash2, X, Shield, Key, Mail, User, ShieldCheck, Lock, Building2, Check, Ban, Unlock, ShieldAlert } from 'lucide-react';
 import { Admin, UserRole } from '../types';
 
 const AdminsPage: React.FC = () => {
@@ -14,10 +14,27 @@ const AdminsPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(UserRole.CENTER_MANAGER);
   const [managedCenterIds, setManagedCenterIds] = useState<string[]>([]);
+  const [isBlocked, setIsBlocked] = useState(false);
+
+  // حساب المشرف الأعلى الثابت (Root)
+  const ROOT_ADMIN_ID = 'a1';
+
+  // حماية إضافية: إذا لم يكن المستخدم مشرفاً أعلى، لا نعرض شيئاً
+  if (currentUser?.role !== UserRole.SUPER_ADMIN) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4 animate-in fade-in duration-500">
+        <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-3xl flex items-center justify-center shadow-inner">
+          <ShieldAlert className="w-10 h-10" />
+        </div>
+        <h2 className="text-2xl font-black text-slate-900">غير مصرح لك بالوصول</h2>
+        <p className="text-slate-500 font-bold max-w-md text-center">عذراً، هذه الصفحة مخصصة للمشرف الأعلى للنظام فقط لضمان خصوصية بيانات الأمان وكلمات السر.</p>
+      </div>
+    );
+  }
 
   const handleOpenAdd = () => {
     setEditingAdmin(null);
-    setName(''); setUsername(''); setPassword(''); setRole(UserRole.CENTER_MANAGER); setManagedCenterIds([]);
+    setName(''); setUsername(''); setPassword(''); setRole(UserRole.CENTER_MANAGER); setManagedCenterIds([]); setIsBlocked(false);
     setModalOpen(true);
   };
 
@@ -28,6 +45,7 @@ const AdminsPage: React.FC = () => {
     setPassword(admin.password || '');
     setRole(admin.role);
     setManagedCenterIds(admin.managedCenterIds || []);
+    setIsBlocked(admin.isBlocked || false);
     setModalOpen(true);
   };
 
@@ -35,6 +53,28 @@ const AdminsPage: React.FC = () => {
     setManagedCenterIds(prev => 
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
+  };
+
+  const handleToggleBlock = (admin: Admin) => {
+    if (admin.id === ROOT_ADMIN_ID) {
+      alert('لا يمكن حظر حساب المشرف الأعلى للنظام تحت أي ظرف.');
+      return;
+    }
+    updateAdmin({ ...admin, isBlocked: !admin.isBlocked });
+  };
+
+  const handleDeleteAdmin = (id: string) => {
+    if (id === ROOT_ADMIN_ID) {
+      alert('حماية النظام: لا يمكن حذف حساب المشرف الأعلى الرئيسي.');
+      return;
+    }
+    if (id === currentUser?.id) {
+      alert('لا يمكنك حذف حسابك الشخصي أثناء تسجيل الدخول.');
+      return;
+    }
+    if (confirm('هل أنت متأكد من سحب كافة الصلاحيات وحذف هذا الحساب نهائياً؟')) {
+      deleteAdmin(id);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -47,7 +87,8 @@ const AdminsPage: React.FC = () => {
       username,
       password,
       role,
-      managedCenterIds: role === UserRole.SUPER_ADMIN ? [] : managedCenterIds
+      managedCenterIds: role === UserRole.SUPER_ADMIN ? [] : managedCenterIds,
+      isBlocked
     };
 
     if (editingAdmin) {
@@ -75,22 +116,33 @@ const AdminsPage: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
         {admins.map((admin) => (
-          <div key={admin.id} className={`bg-white rounded-[2.5rem] shadow-sm border transition-all group overflow-hidden ${
-            admin.id === currentUser?.id ? 'border-indigo-500 ring-2 ring-indigo-500/10' : 'border-slate-100'
-          }`}>
+          <div key={admin.id} className={`bg-white rounded-[2.5rem] shadow-sm border transition-all group overflow-hidden relative ${
+            admin.isBlocked ? 'opacity-60 grayscale' : ''
+          } ${admin.id === currentUser?.id ? 'border-indigo-500 ring-2 ring-indigo-500/10' : 'border-slate-100'}`}>
+            
             <div className="p-8">
               <div className="flex items-start justify-between mb-6">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-inner transition-transform group-hover:rotate-6 ${
+                   admin.id === ROOT_ADMIN_ID ? 'bg-slate-900 text-white' : 
                    admin.id === currentUser?.id ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'
                 }`}>
                   <Shield className="w-7 h-7" />
                 </div>
                 <div className="flex gap-1 bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
+                  {admin.id !== ROOT_ADMIN_ID && (
+                    <button 
+                      onClick={() => handleToggleBlock(admin)} 
+                      className={`p-2 rounded-xl transition-all shadow-sm ${admin.isBlocked ? 'text-emerald-600 hover:bg-emerald-50' : 'text-rose-600 hover:bg-rose-50'}`}
+                      title={admin.isBlocked ? 'تفعيل الدخول' : 'تعطيل الدخول'}
+                    >
+                      {admin.isBlocked ? <Unlock className="w-4 h-4" /> : <Ban className="w-4 h-4" />}
+                    </button>
+                  )}
                   <button onClick={() => handleOpenEdit(admin)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-xl transition-all shadow-sm">
                     <Edit2 className="w-4 h-4" />
                   </button>
-                  {admin.id !== currentUser?.id && (
-                    <button onClick={() => deleteAdmin(admin.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-xl transition-all shadow-sm">
+                  {admin.id !== ROOT_ADMIN_ID && admin.id !== currentUser?.id && (
+                    <button onClick={() => handleDeleteAdmin(admin.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-xl transition-all shadow-sm">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
@@ -98,14 +150,24 @@ const AdminsPage: React.FC = () => {
               </div>
 
               <div className="space-y-1 mb-6">
-                <h3 className="text-xl font-black text-slate-900">{admin.name}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-black text-slate-900">{admin.name}</h3>
+                  {admin.id === ROOT_ADMIN_ID && <span className="px-2 py-0.5 bg-slate-900 text-white text-[8px] font-black rounded uppercase">System Root</span>}
+                </div>
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1.5">
                   <Mail className="w-3 h-3" /> {admin.username}
                 </p>
-                <div className="mt-2">
-                  <span className="inline-flex px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black rounded-full uppercase border border-slate-200">
+                <div className="mt-2 flex gap-2">
+                  <span className={`inline-flex px-3 py-1 text-[10px] font-black rounded-full uppercase border ${
+                    admin.role === UserRole.SUPER_ADMIN ? 'bg-slate-100 text-slate-600 border-slate-200' : 'bg-indigo-50 text-indigo-600 border-indigo-100'
+                  }`}>
                     {admin.role === UserRole.SUPER_ADMIN ? 'Super Admin' : admin.role === UserRole.GENERAL_MANAGER ? 'General Manager' : 'Center Manager'}
                   </span>
+                  {admin.isBlocked && (
+                    <span className="inline-flex px-3 py-1 bg-rose-100 text-rose-600 text-[10px] font-black rounded-full uppercase border border-rose-200">
+                      Blocked
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -126,12 +188,12 @@ const AdminsPage: React.FC = () => {
               )}
             </div>
 
-            <div className={`px-8 py-4 ${admin.id === currentUser?.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>
+            <div className={`px-8 py-4 ${admin.isBlocked ? 'bg-rose-600 text-white' : admin.id === currentUser?.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>
                <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase tracking-widest">
-                    {admin.id === currentUser?.id ? 'Your Active Session' : 'Administrative Access'}
+                    {admin.isBlocked ? 'Access Disabled' : admin.id === currentUser?.id ? 'Your Active Session' : 'Administrative Access'}
                   </span>
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                  {!admin.isBlocked && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>}
                </div>
             </div>
           </div>
@@ -168,10 +230,10 @@ const AdminsPage: React.FC = () => {
                     <div className="relative">
                       <Mail className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
                       <input
-                        type="text" required value={username} onChange={(e) => setUsername(e.target.value)}
+                        type="email" required value={username} onChange={(e) => setUsername(e.target.value)}
                         className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700 text-left"
                         dir="ltr"
-                        placeholder="username / email"
+                        placeholder="example@reliefexperts.org"
                       />
                     </div>
                   </div>
@@ -190,7 +252,8 @@ const AdminsPage: React.FC = () => {
                     <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">نوع الحساب</label>
                     <select
                       value={role} onChange={(e) => setRole(e.target.value as UserRole)}
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-600 appearance-none"
+                      disabled={editingAdmin?.id === ROOT_ADMIN_ID}
+                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-600 appearance-none disabled:opacity-50"
                     >
                       <option value={UserRole.SUPER_ADMIN}>مشرف أعلى (Full Access)</option>
                       <option value={UserRole.GENERAL_MANAGER}>مدير عام (Region Manager)</option>

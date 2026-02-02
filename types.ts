@@ -10,16 +10,21 @@ export interface Center {
   name: string;
   defaultStartTime: string; // HH:mm
   defaultEndTime: string;   // HH:mm
+  checkInGracePeriod: number; // دقائق السماحية للدخول
+  checkOutGracePeriod: number; // دقائق السماحية للخروج
   authorizedIP?: string;    
+  isActive: boolean;
 }
 
 export interface Employee {
   id: string;
+  code: string; 
   name: string;
   centerId: string;
   workingHours: number;
   joinedDate: string;
-  deviceId?: string;        
+  deviceId?: string;
+  isActive: boolean; 
 }
 
 export interface Admin {
@@ -29,6 +34,7 @@ export interface Admin {
   password?: string;        
   role: UserRole;
   managedCenterIds: string[];
+  isBlocked?: boolean;
 }
 
 export interface AttendanceRecord {
@@ -70,6 +76,7 @@ export interface MessageTemplate {
 export interface SystemSettings {
   id?: number;
   systemName: string;
+  logoUrl?: string; // شعار المنظمة المخصص
   language: string;
   dateFormat: string;
   timeFormat: string;

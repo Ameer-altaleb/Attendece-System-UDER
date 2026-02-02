@@ -7,6 +7,7 @@ import {
   Calendar, Bell, MessageSquare, Settings, 
   LogOut, Menu, X, LayoutDashboard, ChevronLeft, ShieldCheck, Wifi, WifiOff
 } from 'lucide-react';
+import GeminiAssistant from './GeminiAssistant.tsx';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,7 +16,7 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => {
-  const { currentUser, setCurrentUser, isRealtimeConnected } = useApp();
+  const { currentUser, setCurrentUser, isRealtimeConnected, settings } = useApp();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   if (!currentUser) return null;
@@ -43,13 +44,17 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
       <aside className={`fixed inset-y-0 right-0 z-[70] w-72 bg-slate-900 text-white transform transition-all duration-500 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}>
         <div className="flex flex-col h-full">
           <div className="p-8 border-b border-slate-800/50">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <ShieldCheck className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg overflow-hidden p-1">
+                {settings.logoUrl ? (
+                   <img src={settings.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                ) : (
+                   <ShieldCheck className="w-7 h-7 text-white" />
+                )}
               </div>
               <div>
-                <h1 className="text-lg font-black tracking-tight leading-none">Relief Experts</h1>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Management System</p>
+                <h1 className="text-xl font-black tracking-tight leading-none">{settings.systemName || 'Relief Experts'}</h1>
+                <p className="text-xs text-indigo-400 font-bold mt-1.5">لوحة الإدارة</p>
               </div>
             </div>
           </div>
@@ -93,31 +98,33 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
       </aside>
 
       <div className="flex-1 lg:pr-72 flex flex-col min-h-screen">
-        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-8 sticky top-0 z-[50]">
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-4 md:px-8 sticky top-0 z-[50]">
           <div className="flex items-center gap-4">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 text-slate-500 bg-slate-100 rounded-xl">
               <Menu className="w-6 h-6" />
             </button>
             <div>
-              <h2 className="text-xl font-black text-slate-900">
+              <h2 className="text-lg md:text-xl font-black text-slate-900">
                 {menuItems.find(i => i.id === activePage)?.label || 'الرئيسية'}
               </h2>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all ${
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${
               isRealtimeConnected ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
             }`}>
               {isRealtimeConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3 animate-pulse" />}
-              {isRealtimeConnected ? 'مزامنة نشطة' : 'فشل المزامنة'}
+              <span className="hidden sm:inline">{isRealtimeConnected ? 'مزامنة نشطة' : 'فشل المزامنة'}</span>
             </div>
           </div>
         </header>
 
-        <div className="p-8 max-w-[1600px] mx-auto w-full">
+        <div className="p-4 md:p-8 max-w-[1600px] mx-auto w-full relative">
           {children}
         </div>
+        
+        <GeminiAssistant />
       </div>
     </div>
   );

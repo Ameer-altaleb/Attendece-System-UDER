@@ -11,9 +11,12 @@
   "dependencies": {
     "react": "18.3.1",
     "react-dom": "18.3.1",
+    "react-is": "18.3.1",
     "lucide-react": "0.463.0",
-    "date-fns": "4.1.0",
-    "recharts": "2.13.0"
+    "date-fns": "^4.1.0",
+    "recharts": "2.13.0",
+    "xlsx": "0.18.5",
+    "@google/genai": "^1.39.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
