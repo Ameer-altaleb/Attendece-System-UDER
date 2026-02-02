@@ -1,8 +1,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Center, Employee, Admin, AttendanceRecord, Holiday, MessageTemplate, SystemSettings, Notification } from './types';
-import { INITIAL_TEMPLATES, INITIAL_SETTINGS, INITIAL_ADMINS, INITIAL_CENTERS, INITIAL_EMPLOYEES } from './constants';
-import { supabase } from './lib/supabase';
+import { Center, Employee, Admin, AttendanceRecord, Holiday, MessageTemplate, SystemSettings, Notification } from './types.ts';
+import { INITIAL_TEMPLATES, INITIAL_SETTINGS, INITIAL_ADMINS, INITIAL_CENTERS, INITIAL_EMPLOYEES } from './constants.tsx';
+import { supabase, checkSupabaseConnection } from './lib/supabase.ts';
 
 interface AppContextType {
   centers: Center[];
@@ -53,6 +53,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const refreshData = async () => {
     setIsLoading(true);
+    
+    if (!checkSupabaseConnection()) {
+      console.warn("Supabase key is missing. Using local data.");
+      setAdmins(INITIAL_ADMINS);
+      setCenters(INITIAL_CENTERS);
+      setEmployees(INITIAL_EMPLOYEES);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const [
         { data: c, error: errC }, 
@@ -102,7 +112,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       
     } catch (error: any) {
       console.error('Database connection error:', error.message);
-      // Fallback to local constants for preview
       setAdmins(INITIAL_ADMINS);
       setCenters(INITIAL_CENTERS);
       setEmployees(INITIAL_EMPLOYEES);
@@ -116,115 +125,122 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
 
   const addCenter = async (c: Center) => {
+    if (!checkSupabaseConnection()) { setCenters([...centers, c]); return; }
     const { error } = await supabase.from('centers').insert(c);
-    if (error) {
-      alert(`فشل إضافة المركز: ${error.message}`);
-    } else {
-      setCenters([...centers, c]);
-    }
+    if (error) alert(`خطأ: ${error.message}`);
+    else setCenters([...centers, c]);
   };
 
   const updateCenter = async (c: Center) => {
+    if (!checkSupabaseConnection()) { setCenters(centers.map(i => i.id === c.id ? c : i)); return; }
     const { error } = await supabase.from('centers').update(c).eq('id', c.id);
-    if (error) {
-      alert(`فشل تحديث المركز: ${error.message}`);
-    } else {
-      setCenters(centers.map(item => item.id === c.id ? c : item));
-    }
+    if (error) alert(`خطأ: ${error.message}`);
+    else setCenters(centers.map(item => item.id === c.id ? c : item));
   };
 
   const deleteCenter = async (id: string) => {
+    if (!checkSupabaseConnection()) { setCenters(centers.filter(i => i.id !== id)); return; }
     const { error } = await supabase.from('centers').delete().eq('id', id);
-    if (error) {
-      alert(`فشل حذف المركز: ${error.message}`);
-    } else {
-      setCenters(centers.filter(item => item.id !== id));
-    }
+    if (error) alert(`خطأ: ${error.message}`);
+    else setCenters(centers.filter(item => item.id !== id));
   };
 
   const addEmployee = async (e: Employee) => {
+    if (!checkSupabaseConnection()) { setEmployees([...employees, e]); return; }
     const { error } = await supabase.from('employees').insert(e);
     if (error) alert(`خطأ: ${error.message}`);
     else setEmployees([...employees, e]);
   };
 
   const updateEmployee = async (e: Employee) => {
+    if (!checkSupabaseConnection()) { setEmployees(employees.map(i => i.id === e.id ? e : i)); return; }
     const { error } = await supabase.from('employees').update(e).eq('id', e.id);
     if (error) alert(`خطأ: ${error.message}`);
     else setEmployees(employees.map(item => item.id === e.id ? e : item));
   };
 
   const deleteEmployee = async (id: string) => {
+    if (!checkSupabaseConnection()) { setEmployees(employees.filter(i => i.id !== id)); return; }
     const { error } = await supabase.from('employees').delete().eq('id', id);
     if (error) alert(`خطأ: ${error.message}`);
     else setEmployees(employees.filter(item => item.id !== id));
   };
 
   const addAttendance = async (r: AttendanceRecord) => {
+    if (!checkSupabaseConnection()) { setAttendance([r, ...attendance]); return; }
     const { error } = await supabase.from('attendance').insert(r);
-    if (error) alert(`فشل تسجيل الحضور: ${error.message}`);
+    if (error) alert(`خطأ: ${error.message}`);
     else setAttendance([r, ...attendance]);
   };
 
   const updateAttendance = async (r: AttendanceRecord) => {
+    if (!checkSupabaseConnection()) { setAttendance(attendance.map(i => i.id === r.id ? r : i)); return; }
     const { error } = await supabase.from('attendance').update(r).eq('id', r.id);
-    if (error) alert(`فشل التحديث: ${error.message}`);
+    if (error) alert(`خطأ: ${error.message}`);
     else setAttendance(attendance.map(item => item.id === r.id ? r : item));
   };
 
   const addNotification = async (n: Notification) => {
+    if (!checkSupabaseConnection()) { setNotifications([n, ...notifications]); return; }
     const { error } = await supabase.from('notifications').insert(n);
     if (error) alert(error.message);
     else setNotifications([n, ...notifications]);
   };
 
   const deleteNotification = async (id: string) => {
+    if (!checkSupabaseConnection()) { setNotifications(notifications.filter(n => n.id !== id)); return; }
     const { error } = await supabase.from('notifications').delete().eq('id', id);
     if (error) alert(error.message);
     else setNotifications(notifications.filter(n => n.id !== id));
   };
 
   const updateTemplate = async (t: MessageTemplate) => {
+    if (!checkSupabaseConnection()) { setTemplates(templates.map(i => i.id === t.id ? t : i)); return; }
     const { error } = await supabase.from('templates').update(t).eq('id', t.id);
     if (error) alert(error.message);
     else setTemplates(templates.map(item => item.id === t.id ? t : item));
   };
 
   const updateSettings = async (s: SystemSettings) => {
+    if (!checkSupabaseConnection()) { setSettings(s); return; }
     const { error } = await supabase.from('settings').update(s).eq('id', 1);
     if (error) alert(error.message);
     else setSettings(s);
   };
 
   const addAdmin = async (a: Admin) => {
+    if (!checkSupabaseConnection()) { setAdmins([...admins, a]); return; }
     const { error } = await supabase.from('admins').insert(a);
     if (error) alert(error.message);
     else setAdmins([...admins, a]);
   };
 
   const updateAdmin = async (a: Admin) => {
+    if (!checkSupabaseConnection()) { setAdmins(admins.map(i => i.id === a.id ? a : i)); return; }
     const { error } = await supabase.from('admins').update(a).eq('id', a.id);
-    if (error) {
-      alert(error.message);
-    } else {
+    if (error) alert(error.message);
+    else {
       setAdmins(admins.map(item => item.id === a.id ? a : item));
       if (currentUser?.id === a.id) setCurrentUser(a);
     }
   };
 
   const deleteAdmin = async (id: string) => {
+    if (!checkSupabaseConnection()) { setAdmins(admins.filter(i => i.id !== id)); return; }
     const { error } = await supabase.from('admins').delete().eq('id', id);
     if (error) alert(error.message);
     else setAdmins(admins.filter(item => item.id !== id));
   };
 
   const addHoliday = async (h: Holiday) => {
+    if (!checkSupabaseConnection()) { setHolidays([...holidays, h]); return; }
     const { error } = await supabase.from('holidays').insert(h);
     if (error) alert(error.message);
     else setHolidays([...holidays, h]);
   };
 
   const deleteHoliday = async (id: string) => {
+    if (!checkSupabaseConnection()) { setHolidays(holidays.filter(i => i.id !== id)); return; }
     const { error } = await supabase.from('holidays').delete().eq('id', id);
     if (error) alert(error.message);
     else setHolidays(holidays.filter(item => item.id !== id));
@@ -233,7 +249,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const importAppData = async (data: any) => {
     setIsLoading(true);
     try {
-      // Logic for importing full data sets to Supabase could be added here
       if (data.centers) setCenters(data.centers);
       if (data.employees) setEmployees(data.employees);
     } finally {
