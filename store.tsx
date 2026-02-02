@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { Center, Employee, Admin, AttendanceRecord, Holiday, MessageTemplate, SystemSettings, Notification } from './types.ts';
 import { INITIAL_TEMPLATES, INITIAL_SETTINGS, INITIAL_ADMINS, INITIAL_CENTERS, INITIAL_EMPLOYEES } from './constants.tsx';
 import { supabase, checkSupabaseConnection } from './lib/supabase.ts';
@@ -15,6 +15,7 @@ interface AppContextType {
   settings: SystemSettings;
   currentUser: Admin | null;
   isLoading: boolean;
+  isRealtimeConnected: boolean;
   setCurrentUser: (user: Admin | null) => void;
   addCenter: (center: Center) => Promise<void>;
   updateCenter: (center: Center) => Promise<void>;
@@ -34,7 +35,7 @@ interface AppContextType {
   addHoliday: (holiday: Holiday) => Promise<void>;
   deleteHoliday: (id: string) => Promise<void>;
   importAppData: (data: any) => Promise<void>;
-  refreshData: () => Promise<void>;
+  refreshData: (tableName?: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -46,232 +47,131 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [templates, setTemplates] = useState<MessageTemplate[]>(INITIAL_TEMPLATES);
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [settings, setSettings] = useState<SystemSettings>(INITIAL_SETTINGS);
   const [currentUser, setCurrentUser] = useState<Admin | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
 
-  const refreshData = async () => {
-    setIsLoading(true);
-    
-    // Safety timeout to prevent infinite white screen
-    const timeout = setTimeout(() => {
-      if (isLoading) {
-        console.warn("Data loading timed out, using local fallback.");
-        setIsLoading(false);
-      }
-    }, 5000);
-
+  const refreshData = useCallback(async (tableName?: string) => {
     if (!checkSupabaseConnection()) {
-      console.warn("Supabase key is missing. Using local data.");
-      setAdmins(INITIAL_ADMINS);
-      setCenters(INITIAL_CENTERS);
-      setEmployees(INITIAL_EMPLOYEES);
-      clearTimeout(timeout);
+      if (!tableName) {
+        setAdmins(INITIAL_ADMINS);
+        setCenters(INITIAL_CENTERS);
+        setEmployees(INITIAL_EMPLOYEES);
+        setTemplates(INITIAL_TEMPLATES);
+      }
       setIsLoading(false);
       return;
     }
 
     try {
-      const [
-        { data: c, error: errC }, 
-        { data: e }, 
-        { data: a }, 
-        { data: att }, 
-        { data: h }, 
-        { data: n }, 
-        { data: t }, 
-        { data: s }
-      ] = await Promise.all([
-        supabase.from('centers').select('*'),
-        supabase.from('employees').select('*'),
-        supabase.from('admins').select('*'),
-        supabase.from('attendance').select('*').order('date', { ascending: false }),
-        supabase.from('holidays').select('*'),
-        supabase.from('notifications').select('*').order('sentAt', { ascending: false }),
-        supabase.from('templates').select('*'),
-        supabase.from('settings').select('*').single()
-      ]);
-
-      if (errC) throw errC;
-
-      if (!a || a.length === 0) {
-        setAdmins(INITIAL_ADMINS);
-      } else {
-        setAdmins(a);
+      if (!tableName || tableName === 'centers') {
+        const { data } = await supabase.from('centers').select('*');
+        if (data && data.length > 0) setCenters(data);
+        else if (!tableName) setCenters(INITIAL_CENTERS);
       }
-
-      if (c && c.length > 0) setCenters(c);
-      else setCenters(INITIAL_CENTERS);
-
-      if (e) setEmployees(e);
-      else setEmployees(INITIAL_EMPLOYEES);
-
-      if (att) setAttendance(att);
-      if (h) setHolidays(h);
-      if (n) setNotifications(n);
-      if (t && t.length > 0) setTemplates(t);
-      if (s) setSettings(s);
-      
-    } catch (error: any) {
-      console.error('Database connection error:', error.message);
-      setAdmins(INITIAL_ADMINS);
-      setCenters(INITIAL_CENTERS);
-      setEmployees(INITIAL_EMPLOYEES);
+      if (!tableName || tableName === 'employees') {
+        const { data } = await supabase.from('employees').select('*');
+        if (data && data.length > 0) setEmployees(data);
+        else if (!tableName) setEmployees(INITIAL_EMPLOYEES);
+      }
+      if (!tableName || tableName === 'admins') {
+        const { data } = await supabase.from('admins').select('*');
+        if (data && data.length > 0) {
+          const processedAdmins = data.map(admin => ({
+            ...admin,
+            managedCenterIds: Array.isArray(admin.managedCenterIds) ? admin.managedCenterIds : []
+          }));
+          setAdmins(processedAdmins);
+        } else {
+          // إذا كان الجدول فارغاً، نستخدم الحسابات الافتراضية لضمان الدخول
+          setAdmins(INITIAL_ADMINS);
+        }
+      }
+      if (!tableName || tableName === 'attendance') {
+        const { data } = await supabase.from('attendance').select('*').order('date', { ascending: false });
+        if (data) setAttendance(data);
+      }
+      if (!tableName || tableName === 'holidays') {
+        const { data } = await supabase.from('holidays').select('*');
+        if (data) setHolidays(data);
+      }
+      if (!tableName || tableName === 'notifications') {
+        const { data } = await supabase.from('notifications').select('*').order('sentAt', { ascending: false });
+        if (data) setNotifications(data);
+      }
+      if (!tableName || tableName === 'templates') {
+        const { data } = await supabase.from('templates').select('*');
+        if (data && data.length > 0) setTemplates(data);
+        else if (!tableName) setTemplates(INITIAL_TEMPLATES);
+      }
+      if (!tableName || tableName === 'settings') {
+        const { data } = await supabase.from('settings').select('*').single();
+        if (data) setSettings(data);
+      }
+    } catch (error) {
+      console.error(`Error refreshing ${tableName || 'all'}:`, error);
     } finally {
-      clearTimeout(timeout);
-      setIsLoading(false);
+      if (!tableName) setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refreshData();
-  }, []);
 
-  const addCenter = async (c: Center) => {
-    if (!checkSupabaseConnection()) { setCenters([...centers, c]); return; }
-    const { error } = await supabase.from('centers').insert(c);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setCenters([...centers, c]);
-  };
+    if (checkSupabaseConnection()) {
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public' },
+          (payload) => {
+            refreshData(payload.table);
+          }
+        )
+        .subscribe((status) => {
+          setIsRealtimeConnected(status === 'SUBSCRIBED');
+        });
 
-  const updateCenter = async (c: Center) => {
-    if (!checkSupabaseConnection()) { setCenters(centers.map(i => i.id === c.id ? c : i)); return; }
-    const { error } = await supabase.from('centers').update(c).eq('id', c.id);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setCenters(centers.map(item => item.id === c.id ? c : item));
-  };
-
-  const deleteCenter = async (id: string) => {
-    if (!checkSupabaseConnection()) { setCenters(centers.filter(i => i.id !== id)); return; }
-    const { error } = await supabase.from('centers').delete().eq('id', id);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setCenters(centers.filter(item => item.id !== id));
-  };
-
-  const addEmployee = async (e: Employee) => {
-    if (!checkSupabaseConnection()) { setEmployees([...employees, e]); return; }
-    const { error } = await supabase.from('employees').insert(e);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setEmployees([...employees, e]);
-  };
-
-  const updateEmployee = async (e: Employee) => {
-    if (!checkSupabaseConnection()) { setEmployees(employees.map(i => i.id === e.id ? e : i)); return; }
-    const { error } = await supabase.from('employees').update(e).eq('id', e.id);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setEmployees(employees.map(item => item.id === e.id ? e : item));
-  };
-
-  const deleteEmployee = async (id: string) => {
-    if (!checkSupabaseConnection()) { setEmployees(employees.filter(i => i.id !== id)); return; }
-    const { error } = await supabase.from('employees').delete().eq('id', id);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setEmployees(employees.filter(item => item.id !== id));
-  };
-
-  const addAttendance = async (r: AttendanceRecord) => {
-    if (!checkSupabaseConnection()) { setAttendance([r, ...attendance]); return; }
-    const { error } = await supabase.from('attendance').insert(r);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setAttendance([r, ...attendance]);
-  };
-
-  const updateAttendance = async (r: AttendanceRecord) => {
-    if (!checkSupabaseConnection()) { setAttendance(attendance.map(i => i.id === r.id ? r : i)); return; }
-    const { error } = await supabase.from('attendance').update(r).eq('id', r.id);
-    if (error) alert(`خطأ: ${error.message}`);
-    else setAttendance(attendance.map(item => item.id === r.id ? r : item));
-  };
-
-  const addNotification = async (n: Notification) => {
-    if (!checkSupabaseConnection()) { setNotifications([n, ...notifications]); return; }
-    const { error } = await supabase.from('notifications').insert(n);
-    if (error) alert(error.message);
-    else setNotifications([n, ...notifications]);
-  };
-
-  const deleteNotification = async (id: string) => {
-    if (!checkSupabaseConnection()) { setNotifications(notifications.filter(n => n.id !== id)); return; }
-    const { error } = await supabase.from('notifications').delete().eq('id', id);
-    if (error) alert(error.message);
-    else setNotifications(notifications.filter(n => n.id !== id));
-  };
-
-  const updateTemplate = async (t: MessageTemplate) => {
-    if (!checkSupabaseConnection()) { setTemplates(templates.map(i => i.id === t.id ? t : i)); return; }
-    const { error } = await supabase.from('templates').update(t).eq('id', t.id);
-    if (error) alert(error.message);
-    else setTemplates(templates.map(item => item.id === t.id ? t : item));
-  };
-
-  const updateSettings = async (s: SystemSettings) => {
-    if (!checkSupabaseConnection()) { setSettings(s); return; }
-    const { error } = await supabase.from('settings').update(s).eq('id', 1);
-    if (error) alert(error.message);
-    else setSettings(s);
-  };
-
-  const addAdmin = async (a: Admin) => {
-    if (!checkSupabaseConnection()) { setAdmins([...admins, a]); return; }
-    const { error } = await supabase.from('admins').insert(a);
-    if (error) alert(error.message);
-    else setAdmins([...admins, a]);
-  };
-
-  const updateAdmin = async (a: Admin) => {
-    if (!checkSupabaseConnection()) { setAdmins(admins.map(i => i.id === a.id ? a : i)); return; }
-    const { error } = await supabase.from('admins').update(a).eq('id', a.id);
-    if (error) alert(error.message);
-    else {
-      setAdmins(admins.map(item => item.id === a.id ? a : item));
-      if (currentUser?.id === a.id) setCurrentUser(a);
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
-  };
+  }, [refreshData]);
 
-  const deleteAdmin = async (id: string) => {
-    if (!checkSupabaseConnection()) { setAdmins(admins.filter(i => i.id !== id)); return; }
-    const { error } = await supabase.from('admins').delete().eq('id', id);
-    if (error) alert(error.message);
-    else setAdmins(admins.filter(item => item.id !== id));
-  };
+  const addCenter = async (c: Center) => { await supabase.from('centers').insert(c); };
+  const updateCenter = async (c: Center) => { await supabase.from('centers').update(c).eq('id', c.id); };
+  const deleteCenter = async (id: string) => { await supabase.from('centers').delete().eq('id', id); };
+  
+  const addEmployee = async (e: Employee) => { await supabase.from('employees').insert(e); };
+  const updateEmployee = async (e: Employee) => { await supabase.from('employees').update(e).eq('id', e.id); };
+  const deleteEmployee = async (id: string) => { await supabase.from('employees').delete().eq('id', id); };
 
-  const addHoliday = async (h: Holiday) => {
-    if (!checkSupabaseConnection()) { setHolidays([...holidays, h]); return; }
-    const { error } = await supabase.from('holidays').insert(h);
-    if (error) alert(error.message);
-    else setHolidays([...holidays, h]);
-  };
+  const addAttendance = async (r: AttendanceRecord) => { await supabase.from('attendance').insert(r); };
+  const updateAttendance = async (r: AttendanceRecord) => { await supabase.from('attendance').update(r).eq('id', r.id); };
 
-  const deleteHoliday = async (id: string) => {
-    if (!checkSupabaseConnection()) { setHolidays(holidays.filter(i => i.id !== id)); return; }
-    const { error } = await supabase.from('holidays').delete().eq('id', id);
-    if (error) alert(error.message);
-    else setHolidays(holidays.filter(item => item.id !== id));
-  };
+  const addNotification = async (n: Notification) => { await supabase.from('notifications').insert(n); };
+  const deleteNotification = async (id: string) => { await supabase.from('notifications').delete().eq('id', id); };
 
-  const importAppData = async (data: any) => {
-    setIsLoading(true);
-    try {
-      if (data.centers) setCenters(data.centers);
-      if (data.employees) setEmployees(data.employees);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const updateTemplate = async (t: MessageTemplate) => { await supabase.from('templates').update(t).eq('id', t.id); };
+  const updateSettings = async (s: SystemSettings) => { await supabase.from('settings').update(s).eq('id', 1); };
+
+  const addAdmin = async (a: Admin) => { await supabase.from('admins').insert(a); };
+  const updateAdmin = async (a: Admin) => { await supabase.from('admins').update(a).eq('id', a.id); };
+  const deleteAdmin = async (id: string) => { await supabase.from('admins').delete().eq('id', id); };
+
+  const addHoliday = async (h: Holiday) => { await supabase.from('holidays').insert(h); };
+  const deleteHoliday = async (id: string) => { await supabase.from('holidays').delete().eq('id', id); };
+
+  const importAppData = async (data: any) => { refreshData(); };
 
   return (
     <AppContext.Provider value={{
-      centers, employees, admins, attendance, holidays, notifications, templates, settings, currentUser, isLoading, setCurrentUser,
-      addCenter, updateCenter, deleteCenter,
-      addEmployee, updateEmployee, deleteEmployee,
-      addAttendance, updateAttendance,
-      addNotification, deleteNotification,
-      updateTemplate, updateSettings,
-      addAdmin, updateAdmin, deleteAdmin,
-      addHoliday, deleteHoliday,
-      importAppData,
-      refreshData
+      centers, employees, admins, attendance, holidays, notifications, templates, settings, currentUser, isLoading, isRealtimeConnected,
+      setCurrentUser, addCenter, updateCenter, deleteCenter, addEmployee, updateEmployee, deleteEmployee,
+      addAttendance, updateAttendance, addNotification, deleteNotification, updateTemplate, updateSettings,
+      addAdmin, updateAdmin, deleteAdmin, addHoliday, deleteHoliday, importAppData, refreshData
     }}>
       {children}
     </AppContext.Provider>

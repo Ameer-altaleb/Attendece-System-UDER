@@ -5,7 +5,7 @@ import { UserRole } from '../types.ts';
 import { 
   Building2, Users, UserCog, BarChart3, 
   Calendar, Bell, MessageSquare, Settings, 
-  LogOut, Menu, X, LayoutDashboard, ChevronLeft, ShieldCheck
+  LogOut, Menu, X, LayoutDashboard, ChevronLeft, ShieldCheck, Wifi, WifiOff
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -15,7 +15,7 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => {
-  const { currentUser, setCurrentUser } = useApp();
+  const { currentUser, setCurrentUser, isRealtimeConnected } = useApp();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   if (!currentUser) return null;
@@ -102,6 +102,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
               <h2 className="text-xl font-black text-slate-900">
                 {menuItems.find(i => i.id === activePage)?.label || 'الرئيسية'}
               </h2>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all ${
+              isRealtimeConnected ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'
+            }`}>
+              {isRealtimeConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3 animate-pulse" />}
+              {isRealtimeConnected ? 'مزامنة نشطة' : 'فشل المزامنة'}
             </div>
           </div>
         </header>

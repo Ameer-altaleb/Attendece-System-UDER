@@ -10,7 +10,7 @@ export interface Center {
   name: string;
   defaultStartTime: string; // HH:mm
   defaultEndTime: string;   // HH:mm
-  authorizedIP?: string;    // عنوان الـ IP المسموح به للمركز (WiFi المركز)
+  authorizedIP?: string;    
 }
 
 export interface Employee {
@@ -19,14 +19,14 @@ export interface Employee {
   centerId: string;
   workingHours: number;
   joinedDate: string;
-  deviceId?: string;        // بصمة الجهاز الفريدة المرتبطة بالموظف
+  deviceId?: string;        
 }
 
 export interface Admin {
   id: string;
   name: string;
   username: string;
-  password?: string;        // كلمة المرور المسجلة
+  password?: string;        
   role: UserRole;
   managedCenterIds: string[];
 }
@@ -35,7 +35,7 @@ export interface AttendanceRecord {
   id: string;
   employeeId: string;
   centerId: string;
-  date: string; // YYYY-MM-DD
+  date: string; 
   checkIn?: string; 
   checkOut?: string;
   status: 'present' | 'late' | 'absent' | 'holiday' | 'not_logged_out';
@@ -68,6 +68,7 @@ export interface MessageTemplate {
 }
 
 export interface SystemSettings {
+  id?: number;
   systemName: string;
   language: string;
   dateFormat: string;

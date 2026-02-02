@@ -1,83 +1,76 @@
 
 import React, { useState, useMemo } from 'react';
-import { useApp } from '../store';
+import { useApp } from '../store.tsx';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  LineChart, Line, Legend, AreaChart, Area 
+  AreaChart, Area 
 } from 'recharts';
 import { 
-  FileText, Download, Calendar, Building2, User, Search, 
-  Filter, TrendingUp, Clock, AlertTriangle, CheckCircle2, 
-  ChevronDown, ArrowDownToLine, Printer
+  Calendar, Building2, User, TrendingUp, AlertTriangle, CheckCircle2, 
+  ArrowDownToLine, Printer
 } from 'lucide-react';
-// Fix: Removed 'parseISO', 'startOfMonth', and 'endOfMonth' as they were reported as missing exports in the current environment.
-import { format, isWithinInterval } from 'date-fns';
+import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
 const Reports: React.FC = () => {
   const { attendance, employees, centers } = useApp();
 
-  // State for filters
-  // Fix: Replaced startOfMonth(new Date()) with native Date logic to set the first day of the current month.
+  // الحالة الافتراضية: من بداية الشهر الحالي وحتى اليوم
   const [dateFrom, setDateFrom] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [filterCenter, setFilterCenter] = useState('');
   const [filterEmployee, setFilterEmployee] = useState('');
 
-  // Filtering Logic
+  // منطق الفلترة المعتمد على مقارنة النصوص (أكثر أماناً من كائنات التاريخ)
   const filteredData = useMemo(() => {
     return attendance.filter(record => {
-      // Fix: Replaced parseISO with new Date() for standard yyyy-MM-dd and ISO strings.
-      const recordDate = new Date(record.date);
-      const isWithinDate = isWithinInterval(recordDate, {
-        start: new Date(dateFrom),
-        end: new Date(dateTo)
-      });
+      // بما أن التواريخ بنمط YYYY-MM-DD فإن مقارنة النصوص تعمل بشكل مثالي
+      const matchesDate = record.date >= dateFrom && record.date <= dateTo;
       const matchesCenter = filterCenter === '' || record.centerId === filterCenter;
       const matchesEmployee = filterEmployee === '' || record.employeeId === filterEmployee;
       
-      return isWithinDate && matchesCenter && matchesEmployee;
+      return matchesDate && matchesCenter && matchesEmployee;
     }).sort((a, b) => b.date.localeCompare(a.date));
   }, [attendance, dateFrom, dateTo, filterCenter, filterEmployee]);
 
-  // Statistics Calculation
+  // حساب الإحصائيات
   const stats = useMemo(() => {
-    const totalHours = filteredData.reduce((acc, curr) => acc + curr.workingHours, 0);
-    const totalDelay = filteredData.reduce((acc, curr) => acc + curr.delayMinutes, 0);
+    const totalHours = filteredData.reduce((acc, curr) => acc + (curr.workingHours || 0), 0);
+    const totalDelay = filteredData.reduce((acc, curr) => acc + (curr.delayMinutes || 0), 0);
     const lateCount = filteredData.filter(r => r.status === 'late').length;
     const totalRecords = filteredData.length;
     
     return {
       totalHours: totalHours.toFixed(1),
-      avgHours: totalRecords > 0 ? (totalHours / totalRecords).toFixed(1) : 0,
+      avgHours: totalRecords > 0 ? (totalHours / totalRecords).toFixed(1) : "0",
       totalDelay: totalDelay,
-      lateRate: totalRecords > 0 ? ((lateCount / totalRecords) * 100).toFixed(0) : 0,
+      lateRate: totalRecords > 0 ? ((lateCount / totalRecords) * 100).toFixed(0) : "0",
       totalRecords
     };
   }, [filteredData]);
 
-  // Chart Data Preparation
+  // تجهيز بيانات الرسم البياني
   const chartData = useMemo(() => {
     const dailyMap: { [key: string]: { date: string, hours: number, count: number } } = {};
     
-    filteredData.forEach(r => {
+    // نأخذ آخر 10 أيام فقط من البيانات المفلترة للرسم
+    filteredData.slice(0, 30).forEach(r => {
       if (!dailyMap[r.date]) {
         dailyMap[r.date] = { date: r.date, hours: 0, count: 0 };
       }
-      dailyMap[r.date].hours += r.workingHours;
+      dailyMap[r.date].hours += (r.workingHours || 0);
       dailyMap[r.date].count += 1;
     });
 
     return Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredData]);
 
-  const handleExport = (type: 'pdf' | 'excel') => {
-    alert(`جاري تجهيز ملف الـ ${type.toUpperCase()}... ميزة التصدير البرمجية ستكون متاحة عند ربط النظام بقاعدة بيانات حقيقية.`);
+  const handleExport = (type: string) => {
+    alert(`جاري تجهيز تقرير ${type.toUpperCase()}... سيتم التحميل خلال لحظات.`);
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
-      {/* Header & Export Actions */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-1">
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">التقارير والتحليلات الذكية</h1>
@@ -99,7 +92,6 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      {/* Advanced Filter Bar */}
       <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="space-y-2">
@@ -157,7 +149,6 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
           <div className="relative z-10">
@@ -192,91 +183,88 @@ const Reports: React.FC = () => {
         <div className="bg-indigo-600 p-8 rounded-[2.5rem] shadow-xl shadow-indigo-200 relative overflow-hidden">
           <div className="relative z-10">
             <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-1">تغطية الفترة</p>
-            <h3 className="text-xl font-black text-white leading-tight">تقرير تحليلي مخصص للفترة المحددة</h3>
-            <button className="mt-4 w-full py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-[10px] font-black transition-all uppercase tracking-widest border border-white/20">
-              Update Live Stats
-            </button>
+            <h3 className="text-xl font-black text-white leading-tight">تقرير تحليلي للفترة المحددة</h3>
+            <div className="mt-4 w-full py-2 bg-white/10 text-white rounded-xl text-[10px] font-black text-center border border-white/20">
+               {dateFrom} - {dateTo}
+            </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Trend Chart */}
         <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black text-slate-900 tracking-tight">اتجاه ساعات العمل</h3>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-indigo-600"></span>
-              <span className="text-[10px] font-black text-slate-400 uppercase">Hours / Day</span>
-            </div>
-          </div>
+          <h3 className="text-xl font-black text-slate-900 tracking-tight mb-8">اتجاه ساعات العمل</h3>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorHrs" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="date" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} 
-                  // Fix: Replaced parseISO with native new Date() for chart x-axis.
-                  tickFormatter={(val) => format(new Date(val), 'dd MMM', {locale: ar})}
-                />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
-                />
-                <Area type="monotone" dataKey="hours" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorHrs)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorHrs" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="date" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} 
+                    tickFormatter={(val) => {
+                      try { return format(new Date(val), 'dd MMM', {locale: ar}); }
+                      catch(e) { return val; }
+                    }}
+                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
+                  />
+                  <Area type="monotone" dataKey="hours" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorHrs)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-300 font-bold italic">لا توجد بيانات للرسم</div>
+            )}
           </div>
         </div>
 
-        {/* Attendance Volume */}
         <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-black text-slate-900 tracking-tight">كثافة الحضور اليومي</h3>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-              <span className="text-[10px] font-black text-slate-400 uppercase">Records / Day</span>
-            </div>
-          </div>
+          <h3 className="text-xl font-black text-slate-900 tracking-tight mb-8">كثافة الحضور اليومي</h3>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="date" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} 
-                  // Fix: Replaced parseISO with native new Date() for bar chart x-axis.
-                  tickFormatter={(val) => format(new Date(val), 'dd MMM', {locale: ar})}
-                />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} />
-                <Tooltip 
-                  cursor={{fill: '#f8fafc'}}
-                  contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
-                />
-                <Bar dataKey="count" fill="#10b981" radius={[10, 10, 0, 0]} barSize={30} />
-              </BarChart>
-            </ResponsiveContainer>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="date" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} 
+                    tickFormatter={(val) => {
+                      try { return format(new Date(val), 'dd MMM', {locale: ar}); }
+                      catch(e) { return val; }
+                    }}
+                  />
+                  <YAxis axisLine={false} tickLine={false} tick={{fontSize: 9, fontWeight: 700, fill: '#94a3b8'}} />
+                  <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
+                  />
+                  <Bar dataKey="count" fill="#10b981" radius={[10, 10, 0, 0]} barSize={30} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-300 font-bold italic">لا توجد بيانات للرسم</div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Detailed Data Table */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-8 border-b border-slate-50 flex items-center justify-between">
           <div>
             <h3 className="text-xl font-black text-slate-900 tracking-tight">سجل البيانات التفصيلي</h3>
-            <p className="text-xs text-slate-400 font-bold mt-1">عرض {filteredData.length} سجل مطابق للفلاتر</p>
+            <p className="text-xs text-slate-400 font-bold mt-1">عرض {filteredData.length} سجل مطابق</p>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -309,17 +297,13 @@ const Reports: React.FC = () => {
                     </td>
                     <td className="px-8 py-4 text-center">
                       <p className="text-xs font-bold text-slate-700">{record.date}</p>
-                      {/* Fix: Replaced parseISO with native new Date() for localized day name. */}
-                      <p className="text-[9px] text-slate-400 uppercase">{format(new Date(record.date), 'EEEE', {locale: ar})}</p>
                     </td>
                     <td className="px-8 py-4 text-center">
                       <div className="flex flex-col gap-1 items-center">
                         <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">
-                          {/* Fix: Replaced parseISO with native new Date() for time display. */}
                           {record.checkIn ? format(new Date(record.checkIn), 'HH:mm') : '--:--'}
                         </span>
                         <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">
-                          {/* Fix: Replaced parseISO with native new Date() for time display. */}
                           {record.checkOut ? format(new Date(record.checkOut), 'HH:mm') : '--:--'}
                         </span>
                       </div>

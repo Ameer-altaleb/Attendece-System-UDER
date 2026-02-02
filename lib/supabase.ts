@@ -1,13 +1,15 @@
 
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
 const supabaseUrl = 'https://riuhndnuziycarmlllzs.supabase.co';
-// Added explicit string type to resolve unintentional comparison error with empty string literal
-const supabaseKey: string = 'sb_publishable_q3BMLdmSMAgzxbreYXlaWg_Nur-Gm5S'; 
+// استخدام المفتاح مباشرة لضمان أعلى مستوى من استقرار الاتصال اللحظي
+const supabaseKey = 'sb_publishable_q3BMLdmSMAgzxbreYXlaWg_Nur-Gm5S'; 
 
-// التحقق مما إذا كان المفتاح صالحاً وليس مجرد نص مؤقت
-const isPlaceholder = !supabaseKey || supabaseKey.includes('YOUR_ACTUAL') || supabaseKey === '';
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
-export const supabase = createClient(supabaseUrl, isPlaceholder ? 'none' : supabaseKey);
-
-export const checkSupabaseConnection = () => !isPlaceholder;
+// دالة فحص الاتصال للتأكد من جاهزية النظام
+export const checkSupabaseConnection = () => {
+  // Fix: Removed redundant empty string check on hardcoded constant to avoid TS type overlap error
+  return !!supabaseUrl && !!supabaseKey;
+};

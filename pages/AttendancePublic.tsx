@@ -6,18 +6,21 @@ import { ar } from 'date-fns/locale';
 import { Clock, MapPin, User, LogIn, LogOut, CheckCircle2, AlertCircle, ShieldAlert, Smartphone, Wifi, Lock, BellRing, Info, Check, Loader2, ShieldCheck, WifiOff } from 'lucide-react';
 import { calculateDelay, calculateEarlyDeparture, calculateWorkingHours, getTodayDateString } from '../utils/attendanceLogic.ts';
 import { AttendanceRecord, Employee, Notification } from '../types.ts';
+import { supabase } from '../lib/supabase.ts';
 
+// توليد بصمة فريدة للجهاز وتخزينها بشكل دائم في المتصفح
 const getDeviceId = () => {
   let id = localStorage.getItem('attendance_device_id');
   if (!id) {
-    id = 'dev_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    // نستخدم تركيبة من التاريخ وعامل عشوائي لضمان عدم التكرار
+    id = 'dev_secure_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
     localStorage.setItem('attendance_device_id', id);
   }
   return id;
 };
 
 const AttendancePublic: React.FC = () => {
-  const { centers, employees, attendance, addAttendance, updateAttendance, templates, updateEmployee, notifications, settings } = useApp();
+  const { centers, employees, attendance, addAttendance, updateAttendance, templates, updateEmployee, notifications, settings, refreshData } = useApp();
   const [selectedCenterId, setSelectedCenterId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -43,9 +46,7 @@ const AttendancePublic: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const selectedEmployee = employees.find(e => e.id === selectedEmployeeId);
   const selectedCenter = centers.find(c => c.id === selectedCenterId);
-
   const filteredEmployees = employees
     .filter(e => e.centerId === selectedCenterId)
     .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
@@ -54,6 +55,7 @@ const AttendancePublic: React.FC = () => {
     ? userIP === selectedCenter.authorizedIP 
     : true;
 
+  // إدارة الإشعارات الإدارية
   useEffect(() => {
     if (selectedEmployeeId) {
       const relevantNotif = notifications.find(n => 
@@ -64,54 +66,73 @@ const AttendancePublic: React.FC = () => {
       
       if (relevantNotif) {
         const dismissed = sessionStorage.getItem(`dismissed_notif_${relevantNotif.id}_${selectedEmployeeId}`);
-        if (!dismissed) {
-          setActiveNotification(relevantNotif);
-        }
+        if (!dismissed) setActiveNotification(relevantNotif);
       }
     }
   }, [selectedEmployeeId, selectedCenterId, notifications]);
 
   const handleAction = async (type: 'in' | 'out') => {
     if (!selectedEmployeeId || !selectedCenter || isSubmitting) return;
-    const employee = employees.find(e => e.id === selectedEmployeeId)!;
-    const currentDeviceId = getDeviceId();
-
+    
     setIsSubmitting(true);
     setMessage(null);
 
     try {
-      // 1. التحقق من الـ IP (إلزامي إذا كان المركز مقيداً)
+      // 1. تحديث البيانات محلياً لضمان التحقق من أحدث حالة للارتباطات
+      await refreshData('employees');
+      
+      const currentDeviceId = getDeviceId();
+      // جلب الموظف الحالي من القائمة المحدثة
+      const employee = employees.find(e => e.id === selectedEmployeeId)!;
+
+      // 2. التحقق من الـ IP (واي فاي المركز)
       if (selectedCenter.authorizedIP && userIP !== selectedCenter.authorizedIP) {
         setMessage({ 
-          text: `فشل التحقق المكاني: يجب الاتصال بشبكة WiFi الخاصة بـ (${selectedCenter.name}) للمتابعة.`, 
+          text: `فشل التحقق الشبكي: يجب الاتصال بشبكة WiFi المركز (${selectedCenter.name}) حصراً.`, 
           type: 'security' 
         });
         setIsSubmitting(false);
         return;
       }
 
-      // 2. التحقق من هوية الجهاز (Device Binding)
+      // 3. منطق ربط الجهاز الصارم (Strict Device Binding)
+      
+      // الحالة أ: الموظف لديه جهاز مسجل بالفعل
       if (employee.deviceId) {
         if (employee.deviceId !== currentDeviceId) {
           setMessage({ 
-            text: 'خطأ أمني: هذا الجهاز غير مطابق للجهاز المسجل لهذا الموظف. يرجى مراجعة الإدارة.', 
+            text: 'خطأ أمني: عذراً، حسابك مرتبط بجهاز آخر. لا يمكنك تسجيل الحضور إلا من جهازك المسجل حصراً.', 
             type: 'security' 
           });
           setIsSubmitting(false);
           return;
         }
-      } else {
-        // 3. تسجيل الجهاز لأول مرة (Registration)
-        // يتم التسجيل فقط إذا كان الـ IP صحيحاً (تم التحقق منه أعلاه)
+      } 
+      // الحالة ب: الموظف يسجل لأول مرة (محاولة ربط جهاز جديد)
+      else {
+        // نتحقق إذا كان هذا الجهاز (currentDeviceId) مرتبطاً أصلاً بموظف آخر في النظام
+        const otherEmployeeWithSameDevice = employees.find(e => e.deviceId === currentDeviceId);
+        
+        if (otherEmployeeWithSameDevice) {
+          setMessage({ 
+            text: `فشل الربط: هذا الجهاز مرتبط فعلياً بالموظف (${otherEmployeeWithSameDevice.name}). لا يسمح باستخدام الجهاز لأكثر من حساب.`, 
+            type: 'security' 
+          });
+          setIsSubmitting(false);
+          return;
+        }
+
+        // إذا كان الجهاز شاغراً، نقوم بربطه بالموظف الآن
         await updateEmployee({ ...employee, deviceId: currentDeviceId });
       }
 
+      // 4. تنفيذ عملية الحضور/الانصراف بعد اجتياز الفحص الأمني
       const today = getTodayDateString();
       const existing = attendance.find(a => a.employeeId === selectedEmployeeId && a.date === today);
 
       if (type === 'in') {
         if (existing) {
-          setMessage({ text: 'لقد قمت بتسجيل الدخول مسبقاً اليوم.', type: 'error' });
+          setMessage({ text: 'لقد سجلت دخولك مسبقاً لهذا اليوم.', type: 'error' });
         } else {
           const delay = calculateDelay(new Date(), selectedCenter.defaultStartTime);
           const record: AttendanceRecord = {
@@ -134,7 +155,7 @@ const AttendancePublic: React.FC = () => {
         if (!existing) {
           setMessage({ text: 'يرجى تسجيل الدخول أولاً.', type: 'error' });
         } else if (existing.checkOut) {
-          setMessage({ text: 'لقد سجلت خروجك مسبقاً اليوم.', type: 'error' });
+          setMessage({ text: 'لقد سجلت خروجك مسبقاً.', type: 'error' });
         } else {
           const now = new Date();
           const early = calculateEarlyDeparture(now, selectedCenter.defaultEndTime);
@@ -150,7 +171,7 @@ const AttendancePublic: React.FC = () => {
         }
       }
     } catch (err) {
-      setMessage({ text: 'حدث خطأ أثناء معالجة الطلب. حاول مرة أخرى.', type: 'error' });
+      setMessage({ text: 'حدث خطأ في معالجة الطلب، يرجى المحاولة ثانية.', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -165,22 +186,21 @@ const AttendancePublic: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 font-cairo overflow-hidden">
-      {/* Background patterns */}
+      {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none opacity-20">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-600 rounded-full blur-[120px]"></div>
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-900 rounded-full blur-[120px]"></div>
       </div>
 
       <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20 relative z-10">
-        {/* Header section */}
         <div className="p-8 text-center bg-slate-50 border-b border-slate-100 relative">
           <div className="absolute top-4 right-8 flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${ipLoading ? 'bg-slate-300 animate-pulse' : 'bg-emerald-500 shadow-lg shadow-emerald-500/50'}`}></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Live</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Security System Active</span>
           </div>
           
-          <h1 className="text-2xl font-black text-slate-800 mb-1">{settings.systemName || 'بوابة الحضور'}</h1>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Attendance Protocol</p>
+          <h1 className="text-2xl font-black text-slate-800 mb-1">{settings.systemName}</h1>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">التحقق من الهوية والأجهزة</p>
           
           <div className="text-5xl font-black text-indigo-600 mt-6 tracking-tighter">
             {format(currentTime, 'HH:mm:ss')}
@@ -190,9 +210,8 @@ const AttendancePublic: React.FC = () => {
           </p>
         </div>
 
-        {/* Main form */}
         <div className="p-8 space-y-5 bg-white">
-          {/* Network Status Indicator */}
+          {/* IP Status */}
           {selectedCenter && (
             <div className={`p-4 rounded-2xl flex items-center justify-between border-2 transition-all ${
               isIpAuthorized ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
@@ -205,19 +224,19 @@ const AttendancePublic: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-tighter opacity-70">مركز التحقق الشبكي</p>
-                  <p className="text-xs font-black">{isIpAuthorized ? 'متصل بشبكة المركز المعتمدة' : 'خارج نطاق تغطية المركز'}</p>
+                  <p className="text-xs font-black">{isIpAuthorized ? 'متصل بشبكة المركز' : 'الشبكة غير معتمدة'}</p>
                 </div>
               </div>
               {isIpAuthorized ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5 animate-pulse" />}
             </div>
           )}
 
-          {/* Message Display */}
+          {/* Messages */}
           {message && (
-            <div className={`p-4 rounded-2xl animate-in slide-in-from-top duration-300 flex items-start gap-3 ${
-              message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 
-              message.type === 'security' ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-lg shadow-rose-100' :
-              'bg-amber-50 text-amber-700 border border-amber-100'
+            <div className={`p-4 rounded-2xl animate-in slide-in-from-top duration-300 flex items-start gap-3 border ${
+              message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
+              message.type === 'security' ? 'bg-rose-50 text-rose-700 border-rose-200 shadow-xl shadow-rose-100 ring-2 ring-rose-500/20' :
+              'bg-amber-50 text-amber-700 border-amber-100'
             }`}>
               <div className="mt-0.5 shrink-0">
                 {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : 
@@ -226,7 +245,7 @@ const AttendancePublic: React.FC = () => {
               </div>
               <div className="space-y-1">
                 <p className="text-xs font-black leading-relaxed">{message.text}</p>
-                {message.type === 'security' && <p className="text-[9px] uppercase font-bold opacity-60">Security Protocol Violation</p>}
+                {message.type === 'security' && <p className="text-[9px] uppercase font-bold opacity-60 italic">Conflict: Unauthorized Device Access</p>}
               </div>
             </div>
           )}
@@ -240,7 +259,7 @@ const AttendancePublic: React.FC = () => {
                 onChange={(e) => { setSelectedCenterId(e.target.value); setSelectedEmployeeId(''); setMessage(null); }}
                 className="w-full h-14 pr-14 pl-6 rounded-2xl border-2 border-slate-100 focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-700 appearance-none bg-slate-50/50"
               >
-                <option value="">-- اختر المركز الميداني --</option>
+                <option value="">-- اختر مركز العمل --</option>
                 {centers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -253,7 +272,7 @@ const AttendancePublic: React.FC = () => {
                 onChange={(e) => { setSelectedEmployeeId(e.target.value); setMessage(null); }}
                 className="w-full h-14 pr-14 pl-6 rounded-2xl border-2 border-slate-100 focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-700 appearance-none bg-slate-50/50 disabled:opacity-50"
               >
-                <option value="">-- اختر اسم الموظف --</option>
+                <option value="">-- اختر اسمك من القائمة --</option>
                 {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
@@ -285,18 +304,20 @@ const AttendancePublic: React.FC = () => {
             </button>
           </div>
 
-          <div className="pt-6 flex flex-col items-center gap-4">
-             <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-full border border-slate-100">
-               <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Device Binding Active</p>
+          <div className="pt-6 flex flex-col items-center gap-4 border-t border-slate-50">
+             <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50/50 rounded-full border border-indigo-100">
+               <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Device-Employee Lock Activated</p>
                <Lock className="w-3.5 h-3.5 text-emerald-500" />
              </div>
-             <p className="text-[10px] text-slate-300 font-bold uppercase tracking-tighter">Identity IP: {userIP}</p>
+             <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center leading-relaxed">
+               يمنع النظام استخدام هذا الجهاز لأكثر من حساب<br/>ويمنع حسابك من الدخول عبر أجهزة أخرى
+             </p>
           </div>
         </div>
       </div>
 
-      {/* Pop-up Notification Overlay */}
+      {/* Notifications Modal */}
       {activeNotification && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-500">
           <div className="w-full max-w-sm bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-white/20 animate-in zoom-in-95 duration-500">
@@ -311,42 +332,27 @@ const AttendancePublic: React.FC = () => {
             </div>
             
             <div className="p-8 space-y-6">
-              <div className="p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100">
-                <p className="text-sm font-bold text-slate-700 leading-relaxed text-center">
+              <div className="p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100 text-center">
+                <p className="text-sm font-bold text-slate-700 leading-relaxed">
                   {activeNotification.message}
                 </p>
               </div>
-              
-              <div className="space-y-3">
-                <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 font-black uppercase">
-                  <span>بواسطة: {activeNotification.senderName}</span>
-                  <span>•</span>
-                  <span>{format(new Date(activeNotification.sentAt), 'hh:mm a', { locale: ar })}</span>
-                </div>
-                
-                <button
-                  onClick={handleDismissNotif}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-slate-200 hover:bg-black transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <Check className="w-4 h-4" /> قرأت وفهمت التعليمات
-                </button>
-              </div>
+              <button
+                onClick={handleDismissNotif}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-slate-200 hover:bg-black transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" /> قرأت وفهمت التعليمات
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Footer Branding */}
-      <div className="mt-8 flex flex-col items-center gap-1 opacity-40">
-        <p className="text-[10px] font-black text-white uppercase tracking-[0.5em]">Relief Experts</p>
-        <p className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest">Management & Security Infrastructure</p>
-      </div>
-
       {isSubmitting && (
         <div className="fixed inset-0 z-[110] bg-white/60 backdrop-blur-sm flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-            <p className="text-xs font-black text-indigo-900 uppercase tracking-widest">جاري تأمين العملية...</p>
+            <p className="text-xs font-black text-indigo-900 uppercase tracking-widest">تحقق أمني صارم جاري...</p>
           </div>
         </div>
       )}

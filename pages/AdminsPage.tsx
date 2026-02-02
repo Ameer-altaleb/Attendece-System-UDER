@@ -1,21 +1,23 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../store';
-import { UserCog, Plus, Edit2, Trash2, X, Shield, Key, Mail, User, ShieldCheck, Lock } from 'lucide-react';
+import { UserCog, Plus, Edit2, Trash2, X, Shield, Key, Mail, User, ShieldCheck, Lock, Building2, Check } from 'lucide-react';
 import { Admin, UserRole } from '../types';
 
 const AdminsPage: React.FC = () => {
-  const { admins, addAdmin, updateAdmin, deleteAdmin, currentUser } = useApp();
+  const { admins, addAdmin, updateAdmin, deleteAdmin, currentUser, centers } = useApp();
   const [isModalOpen, setModalOpen] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<Admin | null>(null);
 
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<UserRole>(UserRole.CENTER_MANAGER);
+  const [managedCenterIds, setManagedCenterIds] = useState<string[]>([]);
 
   const handleOpenAdd = () => {
     setEditingAdmin(null);
-    setName(''); setUsername(''); setPassword('');
+    setName(''); setUsername(''); setPassword(''); setRole(UserRole.CENTER_MANAGER); setManagedCenterIds([]);
     setModalOpen(true);
   };
 
@@ -24,17 +26,15 @@ const AdminsPage: React.FC = () => {
     setName(admin.name);
     setUsername(admin.username);
     setPassword(admin.password || '');
+    setRole(admin.role);
+    setManagedCenterIds(admin.managedCenterIds || []);
     setModalOpen(true);
   };
 
-  const handleDelete = (id: string, name: string) => {
-    if (id === currentUser?.id) {
-      alert("لا يمكن حذف الحساب الذي تستخدمه حالياً لتجنب الخروج من النظام.");
-      return;
-    }
-    if (confirm(`هل أنت متأكد من سحب صلاحية الدخول من: ${name}؟`)) {
-      deleteAdmin(id);
-    }
+  const toggleCenter = (id: string) => {
+    setManagedCenterIds(prev => 
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -46,8 +46,8 @@ const AdminsPage: React.FC = () => {
       name,
       username,
       password,
-      role: editingAdmin?.role || UserRole.GENERAL_MANAGER,
-      managedCenterIds: editingAdmin?.managedCenterIds || []
+      role,
+      managedCenterIds: role === UserRole.SUPER_ADMIN ? [] : managedCenterIds
     };
 
     if (editingAdmin) {
@@ -90,39 +90,40 @@ const AdminsPage: React.FC = () => {
                     <Edit2 className="w-4 h-4" />
                   </button>
                   {admin.id !== currentUser?.id && (
-                    <button onClick={() => handleDelete(admin.id, admin.name)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-xl transition-all shadow-sm">
+                    <button onClick={() => deleteAdmin(admin.id)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-white rounded-xl transition-all shadow-sm">
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  )}
-                  {admin.id === currentUser?.id && (
-                    <div className="p-2 text-indigo-600 bg-white rounded-xl shadow-sm" title="حسابك الحالي">
-                      <ShieldCheck className="w-4 h-4" />
-                    </div>
                   )}
                 </div>
               </div>
 
               <div className="space-y-1 mb-6">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-black text-slate-900">{admin.name}</h3>
-                  {admin.id === currentUser?.id && (
-                    <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[8px] font-black rounded uppercase">أنت</span>
-                  )}
-                </div>
+                <h3 className="text-xl font-black text-slate-900">{admin.name}</h3>
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1.5">
                   <Mail className="w-3 h-3" /> {admin.username}
                 </p>
+                <div className="mt-2">
+                  <span className="inline-flex px-3 py-1 bg-slate-100 text-slate-600 text-[10px] font-black rounded-full uppercase border border-slate-200">
+                    {admin.role === UserRole.SUPER_ADMIN ? 'Super Admin' : admin.role === UserRole.GENERAL_MANAGER ? 'General Manager' : 'Center Manager'}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shadow-sm">
-                  <Key className="w-4 h-4 text-slate-400" />
+              {admin.role !== UserRole.SUPER_ADMIN && (
+                <div className="space-y-3">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">المراكز المسؤولة ({admin.managedCenterIds?.length || 0})</p>
+                   <div className="flex flex-wrap gap-1">
+                      {admin.managedCenterIds?.map(cid => (
+                        <span key={cid} className="px-2 py-1 bg-indigo-50 text-indigo-600 text-[9px] font-black rounded-lg border border-indigo-100 flex items-center gap-1">
+                           <Building2 className="w-2.5 h-2.5" /> {centers.find(c => c.id === cid)?.name || 'Unknown'}
+                        </span>
+                      ))}
+                      {(!admin.managedCenterIds || admin.managedCenterIds.length === 0) && (
+                        <span className="text-[10px] text-slate-400 font-bold italic">لا يوجد مراكز مخصصة</span>
+                      )}
+                   </div>
                 </div>
-                <div>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Login Credentials</p>
-                  <p className="text-xs font-black text-slate-700 tracking-wider">••••••••</p>
-                </div>
-              </div>
+              )}
             </div>
 
             <div className={`px-8 py-4 ${admin.id === currentUser?.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>
@@ -130,11 +131,7 @@ const AdminsPage: React.FC = () => {
                   <span className="text-[10px] font-black uppercase tracking-widest">
                     {admin.id === currentUser?.id ? 'Your Active Session' : 'Administrative Access'}
                   </span>
-                  {admin.id === currentUser?.id ? (
-                    <Lock className="w-3 h-3 text-white/50" />
-                  ) : (
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                  )}
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
                </div>
             </div>
           </div>
@@ -143,7 +140,7 @@ const AdminsPage: React.FC = () => {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden border border-white/20">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl overflow-hidden border border-white/20">
             <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
               <div className="space-y-1">
                 <h3 className="text-xl font-black text-slate-900">{editingAdmin ? 'تعديل بيانات الحساب' : 'إضافة حساب جديد'}</h3>
@@ -153,44 +150,85 @@ const AdminsPage: React.FC = () => {
             </div>
             
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
-              <div className="space-y-4">
-                <div className="group">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">الاسم بالكامل</label>
-                  <div className="relative">
-                    <User className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
-                    <input
-                      type="text" required value={name} onChange={(e) => setName(e.target.value)}
-                      className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700"
-                      placeholder="اسم صاحب الصلاحية"
-                    />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div className="group">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">الاسم بالكامل</label>
+                    <div className="relative">
+                      <User className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text" required value={name} onChange={(e) => setName(e.target.value)}
+                        className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                        placeholder="اسم صاحب الصلاحية"
+                      />
+                    </div>
+                  </div>
+                  <div className="group">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">اسم المستخدم / البريد</label>
+                    <div className="relative">
+                      <Mail className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text" required value={username} onChange={(e) => setUsername(e.target.value)}
+                        className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700 text-left"
+                        dir="ltr"
+                        placeholder="username / email"
+                      />
+                    </div>
+                  </div>
+                  <div className="group">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">كلمة السر</label>
+                    <div className="relative">
+                      <Key className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text" required value={password} onChange={(e) => setPassword(e.target.value)}
+                        className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                        placeholder="كلمة مرور الدخول"
+                      />
+                    </div>
+                  </div>
+                  <div className="group">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">نوع الحساب</label>
+                    <select
+                      value={role} onChange={(e) => setRole(e.target.value as UserRole)}
+                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-600 appearance-none"
+                    >
+                      <option value={UserRole.SUPER_ADMIN}>مشرف أعلى (Full Access)</option>
+                      <option value={UserRole.GENERAL_MANAGER}>مدير عام (Region Manager)</option>
+                      <option value={UserRole.CENTER_MANAGER}>مدير مركز (Site Manager)</option>
+                    </select>
                   </div>
                 </div>
-                <div className="group">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">اسم المستخدم أو البريد الإلكتروني</label>
-                  <div className="relative">
-                    <Mail className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
-                    <input
-                      type="text" required value={username} onChange={(e) => setUsername(e.target.value)}
-                      className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700 text-left"
-                      dir="ltr"
-                      placeholder="username / email"
-                    />
-                  </div>
-                </div>
-                <div className="group">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">كلمة السر</label>
-                  <div className="relative">
-                    <Key className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
-                    <input
-                      type="text" required value={password} onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700"
-                      placeholder="كلمة مرور الدخول"
-                    />
+
+                <div className="space-y-4">
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">المراكز المخصصة للتحكم</label>
+                  <div className={`p-4 bg-slate-50 rounded-3xl border-2 border-slate-100 space-y-2 max-h-[300px] overflow-y-auto ${role === UserRole.SUPER_ADMIN ? 'opacity-40 pointer-events-none' : ''}`}>
+                    {role === UserRole.SUPER_ADMIN ? (
+                      <p className="text-[10px] font-black text-slate-400 italic text-center py-10 uppercase">Super Admins have access to all centers automatically</p>
+                    ) : (
+                      centers.map(center => (
+                        <button
+                          key={center.id}
+                          type="button"
+                          onClick={() => toggleCenter(center.id)}
+                          className={`w-full flex items-center justify-between p-3 rounded-xl transition-all border ${
+                            managedCenterIds.includes(center.id) 
+                            ? 'bg-indigo-600 text-white border-indigo-600' 
+                            : 'bg-white text-slate-600 border-slate-100 hover:border-indigo-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Building2 className={`w-4 h-4 ${managedCenterIds.includes(center.id) ? 'text-white' : 'text-slate-400'}`} />
+                            <span className="text-xs font-bold">{center.name}</span>
+                          </div>
+                          {managedCenterIds.includes(center.id) && <Check className="w-4 h-4" />}
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-4">
+              <div className="flex gap-4 pt-4 border-t border-slate-50">
                 <button type="submit" className="flex-2 bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 flex-grow uppercase text-xs tracking-widest">
                   {editingAdmin ? 'تحديث الصلاحية' : 'إضافة الصلاحية'}
                 </button>

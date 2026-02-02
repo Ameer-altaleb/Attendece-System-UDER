@@ -13,7 +13,7 @@ import NotificationsPage from './pages/NotificationsPage.tsx';
 import MessagesPage from './pages/MessagesPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
 import { UserRole } from './types.ts';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ShieldAlert } from 'lucide-react';
 
 const MainApp: React.FC = () => {
   const { currentUser, setCurrentUser, admins, isLoading } = useApp();
@@ -32,15 +32,23 @@ const MainApp: React.FC = () => {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const admin = admins.find(a => a.username === username);
-    if (admin && admin.password === password) {
-      setCurrentUser(admin);
-      setView('admin');
-      setError('');
-      setUsername('');
-      setPassword('');
+    setError('');
+    
+    const normalizedInput = username.trim().toLowerCase();
+    const admin = admins.find(a => a.username.trim().toLowerCase() === normalizedInput);
+    
+    if (admin) {
+      if (admin.password === password) {
+        setCurrentUser(admin);
+        setView('admin');
+        setError('');
+        setUsername('');
+        setPassword('');
+      } else {
+        setError('كلمة المرور التي أدخلتها غير صحيحة');
+      }
     } else {
-      setError('اسم المستخدم أو كلمة المرور غير صحيحة');
+      setError('اسم المستخدم هذا غير مسجل في النظام');
     }
   };
 
@@ -48,7 +56,7 @@ const MainApp: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4 font-cairo">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="text-white font-black text-sm uppercase tracking-widest animate-pulse">جاري الاتصال بالسيرفر...</p>
+        <p className="text-white font-black text-sm uppercase tracking-widest animate-pulse">جاري جلب بيانات النظام...</p>
       </div>
     );
   }
@@ -62,46 +70,50 @@ const MainApp: React.FC = () => {
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
             </div>
             <h1 className="text-2xl font-black text-slate-900">دخول الإدارة</h1>
-            <p className="text-slate-400 mt-2 font-bold">يرجى إدخال بيانات الاعتماد للوصول</p>
+            <p className="text-slate-400 mt-2 font-bold">استخدم بيانات "المشرف الأعلى" للدخول</p>
           </div>
           
-          {error && <div className="text-red-600 text-xs font-bold text-center bg-red-50 p-3 rounded-2xl border border-red-100 animate-pulse">{error}</div>}
+          {error && (
+            <div className="text-red-600 text-[11px] font-black text-center bg-red-50 p-4 rounded-2xl border border-red-100 flex items-center justify-center gap-2 animate-shake">
+              <ShieldAlert className="w-4 h-4 shrink-0" /> {error}
+            </div>
+          )}
           
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-black text-slate-400 mr-2 mb-2 uppercase">البريد الإلكتروني / اسم المستخدم</label>
+              <label className="block text-[10px] font-black text-slate-400 mr-2 mb-2 uppercase tracking-widest">اسم المستخدم / البريد</label>
               <input 
                 type="text" 
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all font-bold" 
-                placeholder="example@reliefexperts.org"
+                className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" 
+                placeholder="aaltaleb@reliefexperts.org"
               />
             </div>
             <div>
-              <label className="block text-xs font-black text-slate-400 mr-2 mb-2 uppercase">كلمة المرور</label>
+              <label className="block text-[10px] font-black text-slate-400 mr-2 mb-2 uppercase tracking-widest">كلمة المرور</label>
               <input 
                 type="password" 
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all font-bold" 
+                className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" 
                 placeholder="••••••••"
               />
             </div>
           </div>
 
-          <button className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95">
+          <button className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95 uppercase text-xs tracking-widest">
             تسجيل الدخول
           </button>
           
           <button 
             type="button"
             onClick={() => setView('public')}
-            className="w-full text-slate-400 font-bold py-2 hover:text-indigo-600 transition-all text-sm"
+            className="w-full text-slate-400 font-bold py-2 hover:text-indigo-600 transition-all text-[11px] uppercase tracking-widest"
           >
-            ← العودة لصفحة الحضور العامة
+            ← العودة لبوابة الحضور العامة
           </button>
         </form>
       </div>

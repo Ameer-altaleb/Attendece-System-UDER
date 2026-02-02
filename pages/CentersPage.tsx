@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../store';
-// Added missing icon Users to the imports list
-import { Building2, Plus, Edit2, Trash2, X, Clock, ShieldCheck, Wifi, MapPin, Users } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, X, Clock, Wifi, MapPin, Users } from 'lucide-react';
 import { Center } from '../types';
 
 const CentersPage: React.FC = () => {
