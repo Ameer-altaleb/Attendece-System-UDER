@@ -2,20 +2,18 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useApp } from '../store.tsx';
 import { 
-  Settings, Shield, User, Globe, Clock, Save, Lock, 
-  Smartphone, Monitor, CheckCircle, Upload, Database, HardDriveDownload, 
-  RotateCcw, Trash2, ShieldCheck, ShieldAlert, Zap, Activity, ImageIcon, X
+  Settings, Shield, Globe, Clock, Save, 
+  Monitor, CheckCircle, Upload, Database, HardDriveDownload, 
+  Zap, Activity, ImageIcon, X, Wifi, WifiOff, AlertCircle, RefreshCw, Server
 } from 'lucide-react';
 
 const SettingsPage: React.FC = () => {
   const { 
     settings, updateSettings, currentUser, updateAdmin, 
     centers, employees, admins, attendance, holidays, 
-    notifications, templates, importAppData, updateEmployee,
-    attendance: allAttendance
+    notifications, templates, isRealtimeConnected, dbStatus, testConnection
   } = useApp();
   
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
   
   const [sysName, setSysName] = useState(settings.systemName);
@@ -30,13 +28,7 @@ const SettingsPage: React.FC = () => {
   const [isSavingSystem, setIsSavingSystem] = useState(false);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-
-  const systemStats = useMemo(() => ({
-    totalRecords: allAttendance.length,
-    activeEmployees: employees.filter(e => e.isActive).length,
-    linkedDevices: employees.filter(e => !!e.deviceId).length,
-    dbSizeEstimate: (JSON.stringify({centers, employees, attendance}).length / 1024).toFixed(2)
-  }), [allAttendance, employees, centers, attendance]);
+  const [isTesting, setIsTesting] = useState(false);
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -73,26 +65,27 @@ const SettingsPage: React.FC = () => {
     }, 800);
   };
 
-  const handleExportBackup = () => {
-    const backupData = {
-      appName: "Relief Experts Management System",
-      version: "2.0",
-      timestamp: new Date().toISOString(),
-      data: { centers, employees, admins, attendance, holidays, notifications, templates, settings }
-    };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `System_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    triggerSuccess('تم إنشاء النسخة الاحتياطية بنجاح');
+  const handleRunTest = async () => {
+    setIsTesting(true);
+    await testConnection();
+    setTimeout(() => setIsTesting(false), 1000);
   };
 
   const triggerSuccess = (msg: string) => {
     setSaveStatus(msg);
     setTimeout(() => setSaveStatus(null), 3000);
   };
+
+  const tableList = [
+    { key: 'centers', name: 'المراكز الميدانية' },
+    { key: 'employees', name: 'سجل الموظفين' },
+    { key: 'attendance', name: 'سجل الحضور' },
+    { key: 'admins', name: 'صلاحيات المدراء' },
+    { key: 'holidays', name: 'العطل الرسمية' },
+    { key: 'notifications', name: 'التنبيهات' },
+    { key: 'templates', name: 'قوالب الرسائل' },
+    { key: 'settings', name: 'إعدادات النظام' },
+  ];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-20">
@@ -115,6 +108,76 @@ const SettingsPage: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         <div className="xl:col-span-2 space-y-8">
+          {/* Connection Diagnostics Card */}
+          <div className="bg-slate-900 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center">
+                    <Server className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black">تشخيص الربط مع Supabase</h3>
+                    <p className="text-indigo-300 text-[10px] font-black uppercase tracking-[0.2em]">Live Database Health Check</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={handleRunTest}
+                  disabled={isTesting}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
+                  {isTesting ? 'جاري الفحص...' : 'اختبار الربط الآن'}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Main Status */}
+                <div className="p-6 bg-white/5 rounded-[2rem] border border-white/10 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-indigo-300 uppercase">قناة المزامنة الفورية</span>
+                    {isRealtimeConnected ? (
+                      <span className="flex items-center gap-1.5 text-emerald-400 font-black text-[10px] uppercase"><Wifi className="w-3 h-3" /> متصل</span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-rose-400 font-black text-[10px] uppercase"><WifiOff className="w-3 h-3 animate-pulse" /> غير متصل</span>
+                    )}
+                  </div>
+                  <div className="h-px bg-white/10 w-full"></div>
+                  <div className="space-y-3">
+                    <p className="text-xs text-slate-400 font-bold leading-relaxed">
+                      {isRealtimeConnected 
+                        ? "النظام يستقبل التحديثات اللحظية من قاعدة البيانات بنجاح. أي تغيير سيظهر فوراً في لوحة التحكم."
+                        : "فشل الاتصال بقناة التحديثات اللحظية. قد تحتاج لتحديث الصفحة يدوياً لمشاهدة البيانات الجديدة."}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Table Checkers */}
+                <div className="p-6 bg-white/5 rounded-[2rem] border border-white/10 overflow-y-auto max-h-[180px] custom-scrollbar">
+                  <div className="space-y-3">
+                    {tableList.map(table => (
+                      <div key={table.key} className="flex items-center justify-between group/item">
+                        <span className="text-[10px] font-bold text-slate-300 group-hover/item:text-white transition-colors">{table.name}</span>
+                        {dbStatus[table.key] === 'online' ? (
+                          <div className="flex items-center gap-1.5 text-emerald-400 font-black text-[8px] uppercase">
+                            <CheckCircle className="w-3 h-3" /> متاح
+                          </div>
+                        ) : dbStatus[table.key] === 'offline' ? (
+                          <div className="flex items-center gap-1.5 text-rose-400 font-black text-[8px] uppercase">
+                            <AlertCircle className="w-3 h-3" /> مفقود
+                          </div>
+                        ) : (
+                          <div className="w-3 h-3 bg-slate-700 rounded-full animate-pulse"></div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl"></div>
+          </div>
+
           <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 relative overflow-hidden">
             <div className="flex items-center gap-4 mb-10">
               <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-[1.25rem] flex items-center justify-center">
@@ -166,29 +229,11 @@ const SettingsPage: React.FC = () => {
                   </select>
                 </div>
                 <div className="flex items-end">
-                   <button type="submit" disabled={isSavingSystem} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50">
+                   <button type="submit" disabled={isSavingSystem} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-black transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50 shadow-xl shadow-slate-200">
                     {isSavingSystem ? 'جاري الحفظ...' : <><Save className="w-4 h-4" /> حفظ التغييرات</>}
                   </button>
                 </div>
               </div>
-            </form>
-          </div>
-
-          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
-            <div className="flex items-center gap-4 mb-10">
-              <div className="w-12 h-12 bg-rose-50 text-rose-600 rounded-[1.25rem] flex items-center justify-center">
-                 <Shield className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-xl font-black text-slate-900 tracking-tight">أمان وخصوصية الحساب</h3>
-                <p className="text-xs text-slate-400 font-bold">إدارة بيانات الدخول الخاصة بك كمدير للنظام</p>
-              </div>
-            </div>
-            <form onSubmit={handleSaveAccount} className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2"><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">الاسم</label><input type="text" required value={adminName} onChange={(e) => setAdminName(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none font-bold text-slate-700" /></div>
-                <div className="space-y-2"><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">البريد</label><input type="text" required dir="ltr" value={adminUsername} onChange={(e) => setAdminUsername(e.target.value)} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none font-bold text-slate-700 text-left" /></div>
-                <div className="space-y-2"><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">كلمة سر جديدة</label><input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="اختياري" className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none font-bold text-slate-700" /></div>
-                <div className="flex items-end"><button type="submit" disabled={isSavingAccount} className="w-full bg-rose-600 text-white font-black py-4 rounded-2xl hover:bg-rose-700 transition-all flex items-center justify-center gap-2 text-xs disabled:opacity-50">تحديث الأمان</button></div>
             </form>
           </div>
         </div>
@@ -198,17 +243,16 @@ const SettingsPage: React.FC = () => {
             <div className="relative z-10 flex flex-col items-center text-center space-y-6">
               <Database className="w-12 h-12" />
               <div className="space-y-2"><h3 className="text-2xl font-black tracking-tight">النسخ الاحتياطي</h3><p className="text-xs text-indigo-100 font-bold leading-relaxed">قم بإنشاء نسخة كاملة من النظام لاستعادتها في أي وقت.</p></div>
-              <button onClick={handleExportBackup} className="w-full flex items-center justify-center gap-3 bg-white text-indigo-600 font-black py-5 rounded-[1.75rem] hover:bg-indigo-50 transition-all shadow-lg active:scale-95"><HardDriveDownload className="w-6 h-6" /> تصدير نسخة شاملة</button>
+              <button className="w-full flex items-center justify-center gap-3 bg-white text-indigo-600 font-black py-5 rounded-[1.75rem] hover:bg-indigo-50 transition-all shadow-lg active:scale-95"><HardDriveDownload className="w-6 h-6" /> تصدير نسخة شاملة</button>
             </div>
             <div className="absolute -top-10 -left-10 w-40 h-40 bg-white/5 rounded-full blur-2xl"></div>
           </div>
 
           <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
-            <div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">إحصائيات</h3><Activity className="w-4 h-4 text-emerald-500" /></div>
+            <div className="flex items-center justify-between"><h3 className="text-sm font-black text-slate-400 uppercase tracking-widest">إحصائيات الاتصال</h3><Activity className="w-4 h-4 text-emerald-500" /></div>
             <div className="space-y-6">
-               <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">السجلات</span><span className="text-sm font-black text-slate-900">{systemStats.totalRecords}</span></div>
-               <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">الأجهزة المرتبطة</span><span className="text-sm font-black text-slate-900">{systemStats.linkedDevices}</span></div>
-               <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">حجم الملف</span><span className="text-sm font-black text-indigo-600">{systemStats.dbSizeEstimate} KB</span></div>
+               <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">المزامنة</span><span className={`text-[10px] font-black uppercase ${isRealtimeConnected ? 'text-emerald-600' : 'text-rose-600'}`}>{isRealtimeConnected ? 'نشط' : 'معطل'}</span></div>
+               <div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-600">الجداول المتاحة</span><span className="text-sm font-black text-slate-900">{Object.values(dbStatus).filter(v => v === 'online').length} / 8</span></div>
             </div>
           </div>
         </div>

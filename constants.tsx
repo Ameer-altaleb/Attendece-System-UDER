@@ -1,5 +1,5 @@
 
-import { UserRole, Center, Employee, Admin, MessageTemplate, SystemSettings } from './types.ts';
+import { UserRole, Center, Employee, Admin, MessageTemplate, SystemSettings, Holiday, Notification } from './types.ts';
 
 export const INITIAL_CENTERS: Center[] = [
   { id: 'c1', name: 'مركز الرياض الرئيسي', defaultStartTime: '08:00', defaultEndTime: '16:00', checkInGracePeriod: 15, checkOutGracePeriod: 15, isActive: true },
@@ -20,30 +20,20 @@ export const INITIAL_ADMINS: Admin[] = [
     id: 'a1', 
     name: 'المشرف الأعلى', 
     username: 'aaltaleb@reliefexperts.org', 
-    password: 'Ameer1997', 
+    password: '123', 
     role: UserRole.SUPER_ADMIN, 
     managedCenterIds: [],
     isBlocked: false
   },
-  { 
-    id: 'a2', 
-    name: 'مدير 1', 
-    username: 'manager_west', 
-    password: '123', 
-    role: UserRole.GENERAL_MANAGER, 
-    managedCenterIds: ['c2'],
-    isBlocked: false
-  },
-  { 
-    id: 'a3', 
-    name: 'مدير 2', 
-    username: 'manager_c1', 
-    password: '123', 
-    role: UserRole.CENTER_MANAGER, 
-    managedCenterIds: ['c1'],
-    isBlocked: false
-  },
 ];
+
+export const INITIAL_HOLIDAYS: Holiday[] = [
+  { id: 'h1', name: 'عيد الفطر', date: '2024-04-10' },
+  { id: 'h2', name: 'عيد الأضحى', date: '2024-06-16' },
+  { id: 'h3', name: 'اليوم الوطني', date: '2024-09-23' },
+];
+
+export const INITIAL_NOTIFICATIONS: Notification[] = [];
 
 export const INITIAL_TEMPLATES: MessageTemplate[] = [
   { id: 't1', type: 'check_in', content: 'تم تسجيل دخولك بنجاح في الوقت المحدد. نتمنى لك يوماً سعيداً!' },
@@ -53,7 +43,7 @@ export const INITIAL_TEMPLATES: MessageTemplate[] = [
 ];
 
 export const INITIAL_SETTINGS: SystemSettings = {
-  systemName: 'نظام حضور الموظفين',
+  systemName: 'Relief Experts Management',
   logoUrl: '',
   language: 'Arabic',
   dateFormat: 'YYYY-MM-DD',
