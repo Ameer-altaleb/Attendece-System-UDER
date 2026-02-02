@@ -2,11 +2,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
 const supabaseUrl = 'https://riuhndnuziycarmlllzs.supabase.co';
-// يرجى استبدال هذا النص بمفتاح ANON الفعلي من Supabase
-const supabaseKey = 'YOUR_ACTUAL_ANON_KEY_FROM_SUPABASE'; 
+// Added explicit string type to resolve unintentional comparison error with empty string literal
+const supabaseKey: string = 'sb_publishable_q3BMLdmSMAgzxbreYXlaWg_Nur-Gm5S'; 
 
-// التحقق مما إذا كان المفتاح هو النص التجريبي لمنع الانهيار
-const isPlaceholder = supabaseKey === 'YOUR_ACTUAL_ANON_KEY_FROM_SUPABASE';
+// التحقق مما إذا كان المفتاح صالحاً وليس مجرد نص مؤقت
+const isPlaceholder = !supabaseKey || supabaseKey.includes('YOUR_ACTUAL') || supabaseKey === '';
 
 export const supabase = createClient(supabaseUrl, isPlaceholder ? 'none' : supabaseKey);
 
