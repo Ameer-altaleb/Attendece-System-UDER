@@ -3,16 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../store.tsx';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { Clock, MapPin, User, LogIn, LogOut, CheckCircle2, AlertCircle, ShieldAlert, Smartphone, Wifi, Lock, BellRing, Info, Check, Loader2, ShieldCheck, WifiOff } from 'lucide-react';
+import { Clock, MapPin, User, LogIn, LogOut, CheckCircle2, AlertCircle, ShieldAlert, Smartphone, Wifi, Lock, BellRing, Check, Loader2, ShieldCheck, WifiOff } from 'lucide-react';
 import { calculateDelay, calculateEarlyDeparture, calculateWorkingHours, getTodayDateString } from '../utils/attendanceLogic.ts';
 import { AttendanceRecord, Employee, Notification } from '../types.ts';
 import { supabase } from '../lib/supabase.ts';
 
-// توليد بصمة فريدة للجهاز وتخزينها بشكل دائم في المتصفح
+// Generate a unique device fingerprint and store it permanently in the browser
 const getDeviceId = () => {
   let id = localStorage.getItem('attendance_device_id');
   if (!id) {
-    // نستخدم تركيبة من التاريخ وعامل عشوائي لضمان عدم التكرار
     id = 'dev_secure_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
     localStorage.setItem('attendance_device_id', id);
   }
@@ -20,7 +19,7 @@ const getDeviceId = () => {
 };
 
 const AttendancePublic: React.FC = () => {
-  const { centers, employees, attendance, addAttendance, updateAttendance, templates, updateEmployee, notifications, settings, refreshData } = useApp();
+  const { centers, attendance, addAttendance, updateAttendance, templates, updateEmployee, notifications, settings, refreshData } = useApp();
   const [selectedCenterId, setSelectedCenterId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -29,6 +28,25 @@ const AttendancePublic: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeNotification, setActiveNotification] = useState<Notification | null>(null);
   const [ipLoading, setIpLoading] = useState(true);
+  const [employeesList, setEmployeesList] = useState<Employee[]>([]);
+
+  // Fetch employees list separately to ensure it is up to date
+  useEffect(() => {
+    const fetchEmps = async () => {
+      const { data } = await supabase.from('employees').select('*');
+      if (data) setEmployeesList(data);
+    };
+    fetchEmps();
+    
+    // Subscribe to changes
+    const channel = supabase.channel('employees-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, payload => {
+        fetchEmps();
+      })
+      .subscribe();
+      
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -47,15 +65,12 @@ const AttendancePublic: React.FC = () => {
   }, []);
 
   const selectedCenter = centers.find(c => c.id === selectedCenterId);
-  const filteredEmployees = employees
-    .filter(e => e.centerId === selectedCenterId)
-    .sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-
+  
   const isIpAuthorized = selectedCenter?.authorizedIP 
     ? userIP === selectedCenter.authorizedIP 
     : true;
 
-  // إدارة الإشعارات الإدارية
+  // Manage administrative notifications
   useEffect(() => {
     if (selectedEmployeeId) {
       const relevantNotif = notifications.find(n => 
@@ -78,14 +93,9 @@ const AttendancePublic: React.FC = () => {
     setMessage(null);
 
     try {
-      // 1. تحديث البيانات محلياً لضمان التحقق من أحدث حالة للارتباطات
-      await refreshData('employees');
-      
       const currentDeviceId = getDeviceId();
-      // جلب الموظف الحالي من القائمة المحدثة
-      const employee = employees.find(e => e.id === selectedEmployeeId)!;
-
-      // 2. التحقق من الـ IP (واي فاي المركز)
+      
+      // 1. Check IP (Center WiFi)
       if (selectedCenter.authorizedIP && userIP !== selectedCenter.authorizedIP) {
         setMessage({ 
           text: `فشل التحقق الشبكي: يجب الاتصال بشبكة WiFi المركز (${selectedCenter.name}) حصراً.`, 
@@ -95,40 +105,63 @@ const AttendancePublic: React.FC = () => {
         return;
       }
 
-      // 3. منطق ربط الجهاز الصارم (Strict Device Binding)
-      
-      // الحالة أ: الموظف لديه جهاز مسجل بالفعل
-      if (employee.deviceId) {
-        if (employee.deviceId !== currentDeviceId) {
-          setMessage({ 
-            text: 'خطأ أمني: عذراً، حسابك مرتبط بجهاز آخر. لا يمكنك تسجيل الحضور إلا من جهازك المسجل حصراً.', 
-            type: 'security' 
-          });
-          setIsSubmitting(false);
-          return;
-        }
-      } 
-      // الحالة ب: الموظف يسجل لأول مرة (محاولة ربط جهاز جديد)
-      else {
-        // نتحقق إذا كان هذا الجهاز (currentDeviceId) مرتبطاً أصلاً بموظف آخر في النظام
-        const otherEmployeeWithSameDevice = employees.find(e => e.deviceId === currentDeviceId);
-        
-        if (otherEmployeeWithSameDevice) {
-          setMessage({ 
-            text: `فشل الربط: هذا الجهاز مرتبط فعلياً بالموظف (${otherEmployeeWithSameDevice.name}). لا يسمح باستخدام الجهاز لأكثر من حساب.`, 
-            type: 'security' 
-          });
-          setIsSubmitting(false);
-          return;
-        }
+      // 2. Fetch latest employee data directly from DB to prevent tampering or stale state
+      const { data: dbEmployee, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('id', selectedEmployeeId)
+        .single();
 
-        // إذا كان الجهاز شاغراً، نقوم بربطه بالموظف الآن
-        await updateEmployee({ ...employee, deviceId: currentDeviceId });
+      if (empError || !dbEmployee) throw new Error('Employee record missing');
+
+      // 3. Account Lock verification
+      if (dbEmployee.deviceId && dbEmployee.deviceId !== currentDeviceId) {
+        setMessage({ 
+          text: 'خطأ أمني: هذا الحساب مرتبط بجهاز آخر. يرجى استخدام جهازك الشخصي المسجل مسبقاً فقط.', 
+          type: 'security' 
+        });
+        setIsSubmitting(false);
+        return;
       }
 
-      // 4. تنفيذ عملية الحضور/الانصراف بعد اجتياز الفحص الأمني
+      // 4. Device Lock verification (prevent multiple accounts on one device)
+      const { data: conflictingEmployees, error: conflictError } = await supabase
+        .from('employees')
+        .select('name')
+        .eq('deviceId', currentDeviceId)
+        .neq('id', selectedEmployeeId);
+
+      if (conflictError) throw conflictError;
+
+      if (conflictingEmployees && conflictingEmployees.length > 0) {
+        setMessage({ 
+          text: `فشل الربط: هذا الجهاز مرتبط فعلياً بالموظف (${conflictingEmployees[0].name}). لا يسمح باستخدام نفس الجهاز لأكثر من حساب.`, 
+          type: 'security' 
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 5. Link device if not already linked
+      if (!dbEmployee.deviceId) {
+        const { error: updateError } = await supabase
+          .from('employees')
+          .update({ deviceId: currentDeviceId })
+          .eq('id', selectedEmployeeId);
+          
+        if (updateError) throw updateError;
+        setEmployeesList(prev => prev.map(e => e.id === selectedEmployeeId ? { ...e, deviceId: currentDeviceId } : e));
+      }
+
+      // 6. Execute attendance action
       const today = getTodayDateString();
-      const existing = attendance.find(a => a.employeeId === selectedEmployeeId && a.date === today);
+      const { data: existingRecords } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('employeeId', selectedEmployeeId)
+        .eq('date', today);
+
+      const existing = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
 
       if (type === 'in') {
         if (existing) {
@@ -138,7 +171,7 @@ const AttendancePublic: React.FC = () => {
           const record: AttendanceRecord = {
             id: Math.random().toString(36).substr(2, 9),
             employeeId: selectedEmployeeId,
-            centerId: employee.centerId,
+            centerId: dbEmployee.centerId,
             date: today,
             checkIn: new Date().toISOString(),
             status: delay > 0 ? 'late' : 'present',
@@ -170,8 +203,12 @@ const AttendancePublic: React.FC = () => {
           setMessage({ text: template?.content.replace('{minutes}', early.toString()) || 'تم تسجيل الخروج بنجاح', type: 'success' });
         }
       }
-    } catch (err) {
-      setMessage({ text: 'حدث خطأ في معالجة الطلب، يرجى المحاولة ثانية.', type: 'error' });
+      
+      refreshData('attendance');
+      
+    } catch (err: any) {
+      console.error(err);
+      setMessage({ text: 'حدث خطأ تقني في معالجة الطلب، يرجى المحاولة ثانية.', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -185,174 +222,128 @@ const AttendancePublic: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 font-cairo overflow-hidden">
-      {/* Background Decor */}
-      <div className="fixed inset-0 pointer-events-none opacity-20">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-600 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-900 rounded-full blur-[120px]"></div>
-      </div>
-
-      <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white/20 relative z-10">
-        <div className="p-8 text-center bg-slate-50 border-b border-slate-100 relative">
-          <div className="absolute top-4 right-8 flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${ipLoading ? 'bg-slate-300 animate-pulse' : 'bg-emerald-500 shadow-lg shadow-emerald-500/50'}`}></div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Security System Active</span>
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 font-cairo text-right" dir="rtl">
+      <div className="w-full max-w-xl space-y-8">
+        <div className="text-center space-y-4">
+          <div className="inline-flex items-center gap-3 px-6 py-3 bg-indigo-600/10 border border-indigo-500/20 rounded-3xl backdrop-blur-md">
+            <ShieldCheck className="w-6 h-6 text-indigo-500" />
+            <span className="text-white font-black tracking-widest uppercase text-sm">بوابة الحضور الرقمية الآمنة</span>
           </div>
-          
-          <h1 className="text-2xl font-black text-slate-800 mb-1">{settings.systemName}</h1>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">التحقق من الهوية والأجهزة</p>
-          
-          <div className="text-5xl font-black text-indigo-600 mt-6 tracking-tighter">
-            {format(currentTime, 'HH:mm:ss')}
+          <div className="space-y-1">
+            <h1 className="text-5xl font-black text-white tracking-tighter">
+              {currentTime.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </h1>
+            <p className="text-indigo-400 font-bold uppercase tracking-widest text-xs">
+              {format(currentTime, 'EEEE، dd MMMM yyyy', { locale: ar })}
+            </p>
           </div>
-          <p className="text-slate-400 text-xs font-bold mt-2 uppercase tracking-widest">
-            {format(currentTime, 'EEEE، dd MMMM yyyy', { locale: ar })}
-          </p>
         </div>
 
-        <div className="p-8 space-y-5 bg-white">
-          {/* IP Status */}
-          {selectedCenter && (
-            <div className={`p-4 rounded-2xl flex items-center justify-between border-2 transition-all ${
-              isIpAuthorized ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
-            }`}>
-              <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${
-                  isIpAuthorized ? 'bg-white text-emerald-600' : 'bg-white text-rose-600'
-                }`}>
-                  {isIpAuthorized ? <Wifi className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-tighter opacity-70">مركز التحقق الشبكي</p>
-                  <p className="text-xs font-black">{isIpAuthorized ? 'متصل بشبكة المركز' : 'الشبكة غير معتمدة'}</p>
-                </div>
-              </div>
-              {isIpAuthorized ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5 animate-pulse" />}
-            </div>
-          )}
-
-          {/* Messages */}
-          {message && (
-            <div className={`p-4 rounded-2xl animate-in slide-in-from-top duration-300 flex items-start gap-3 border ${
-              message.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
-              message.type === 'security' ? 'bg-rose-50 text-rose-700 border-rose-200 shadow-xl shadow-rose-100 ring-2 ring-rose-500/20' :
-              'bg-amber-50 text-amber-700 border-amber-100'
-            }`}>
-              <div className="mt-0.5 shrink-0">
-                {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : 
-                 message.type === 'security' ? <ShieldAlert className="w-6 h-6" /> :
-                 <AlertCircle className="w-5 h-5" />}
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-black leading-relaxed">{message.text}</p>
-                {message.type === 'security' && <p className="text-[9px] uppercase font-bold opacity-60 italic">Conflict: Unauthorized Device Access</p>}
+        <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[3.5rem] border border-white/10 shadow-2xl space-y-8 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600/10 rounded-full blur-3xl -mr-16 -mt-16"></div>
+          
+          <div className="grid grid-cols-1 gap-6 relative z-10">
+            <div className="space-y-3">
+              <label className="block text-[10px] font-black text-slate-500 uppercase mr-4 tracking-widest">الموقع الميداني / المركز</label>
+              <div className="relative group">
+                <MapPin className="w-5 h-5 absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-500 transition-colors" />
+                <select 
+                  value={selectedCenterId} 
+                  onChange={(e) => { setSelectedCenterId(e.target.value); setSelectedEmployeeId(''); setMessage(null); }}
+                  className="w-full pr-14 pl-6 py-5 bg-white/5 border-2 border-white/10 rounded-3xl text-white font-black appearance-none focus:border-indigo-500 focus:bg-white/10 outline-none transition-all"
+                >
+                  <option value="" className="text-slate-900">-- اختر المركز الميداني --</option>
+                  {centers.map(c => <option key={c.id} value={c.id} className="text-slate-900">{c.name}</option>)}
+                </select>
               </div>
             </div>
-          )}
 
-          <div className="space-y-3">
-            <div className="relative group">
-              <MapPin className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" />
-              <select
-                disabled={isSubmitting}
-                value={selectedCenterId}
-                onChange={(e) => { setSelectedCenterId(e.target.value); setSelectedEmployeeId(''); setMessage(null); }}
-                className="w-full h-14 pr-14 pl-6 rounded-2xl border-2 border-slate-100 focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-700 appearance-none bg-slate-50/50"
-              >
-                <option value="">-- اختر مركز العمل --</option>
-                {centers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-
-            <div className="relative group">
-              <User className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" />
-              <select
-                disabled={!selectedCenterId || isSubmitting}
-                value={selectedEmployeeId}
-                onChange={(e) => { setSelectedEmployeeId(e.target.value); setMessage(null); }}
-                className="w-full h-14 pr-14 pl-6 rounded-2xl border-2 border-slate-100 focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-700 appearance-none bg-slate-50/50 disabled:opacity-50"
-              >
-                <option value="">-- اختر اسمك من القائمة --</option>
-                {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
+            <div className={`space-y-3 transition-all duration-500 ${!selectedCenterId ? 'opacity-30 pointer-events-none scale-95' : 'opacity-100 scale-100'}`}>
+              <label className="block text-[10px] font-black text-slate-500 uppercase mr-4 tracking-widest">اسم الموظف الثلاثي</label>
+              <div className="relative group">
+                <User className="w-5 h-5 absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-500 transition-colors" />
+                <select 
+                  value={selectedEmployeeId} 
+                  onChange={(e) => { setSelectedEmployeeId(e.target.value); setMessage(null); }}
+                  className="w-full pr-14 pl-6 py-5 bg-white/5 border-2 border-white/10 rounded-3xl text-white font-black appearance-none focus:border-indigo-500 focus:bg-white/10 outline-none transition-all"
+                >
+                  <option value="" className="text-slate-900">-- ابحث عن اسمك في القائمة --</option>
+                  {employeesList.filter(e => e.centerId === selectedCenterId).sort((a,b) => a.name.localeCompare(b.name, 'ar')).map(e => (
+                    <option key={e.id} value={e.id} className="text-slate-900">{e.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-4">
-            <button
+          <div className="flex gap-4 relative z-10">
+            <button 
               onClick={() => handleAction('in')}
-              disabled={!selectedEmployeeId || isSubmitting || !isIpAuthorized}
-              className="group h-20 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 disabled:grayscale relative overflow-hidden"
+              disabled={!selectedEmployeeId || isSubmitting}
+              className="flex-1 bg-indigo-600 text-white font-black py-6 rounded-[2rem] hover:bg-indigo-700 disabled:opacity-30 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 flex flex-col items-center gap-2 group"
             >
-              <div className="flex flex-col items-center justify-center gap-1 relative z-10">
-                <LogIn className="w-6 h-6" />
-                <span className="text-xs uppercase tracking-widest">تسجيل دخول</span>
-              </div>
-              <div className="absolute top-0 left-0 w-full h-full bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+              {isSubmitting ? <Loader2 className="w-8 h-8 animate-spin" /> : <LogIn className="w-8 h-8 group-hover:scale-110 transition-transform" />}
+              <span className="text-xs uppercase tracking-widest">تسجيل دخول</span>
             </button>
-            
-            <button
+            <button 
               onClick={() => handleAction('out')}
-              disabled={!selectedEmployeeId || isSubmitting || !isIpAuthorized}
-              className="group h-20 bg-slate-900 text-white rounded-2xl font-black shadow-xl shadow-slate-200 hover:bg-black active:scale-95 transition-all disabled:opacity-40 disabled:grayscale relative overflow-hidden"
+              disabled={!selectedEmployeeId || isSubmitting}
+              className="flex-1 bg-slate-800 text-white font-black py-6 rounded-[2rem] hover:bg-slate-700 disabled:opacity-30 transition-all shadow-xl active:scale-95 flex flex-col items-center gap-2 group"
             >
-              <div className="flex flex-col items-center justify-center gap-1 relative z-10">
-                <LogOut className="w-6 h-6" />
-                <span className="text-xs uppercase tracking-widest">تسجيل خروج</span>
-              </div>
-              <div className="absolute top-0 left-0 w-full h-full bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform"></div>
+              {isSubmitting ? <Loader2 className="w-8 h-8 animate-spin" /> : <LogOut className="w-8 h-8 group-hover:scale-110 transition-transform" />}
+              <span className="text-xs uppercase tracking-widest">تسجيل خروج</span>
             </button>
           </div>
 
-          <div className="pt-6 flex flex-col items-center gap-4 border-t border-slate-50">
-             <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50/50 rounded-full border border-indigo-100">
-               <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
-               <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Device-Employee Lock Activated</p>
-               <Lock className="w-3.5 h-3.5 text-emerald-500" />
-             </div>
-             <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center leading-relaxed">
-               يمنع النظام استخدام هذا الجهاز لأكثر من حساب<br/>ويمنع حسابك من الدخول عبر أجهزة أخرى
+          {message && (
+            <div className={`p-6 rounded-3xl border animate-in zoom-in-95 duration-300 relative z-10 ${
+              message.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 
+              message.type === 'security' ? 'bg-rose-500/10 border-rose-500/50 text-rose-400' :
+              'bg-amber-500/10 border-amber-500/50 text-amber-400'
+            }`}>
+              <div className="flex items-start gap-4">
+                {message.type === 'success' ? <CheckCircle2 className="w-6 h-6 shrink-0" /> : <ShieldAlert className="w-6 h-6 shrink-0" />}
+                <p className="text-sm font-bold leading-relaxed">{message.text}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between px-8 py-4 bg-white/5 rounded-3xl border border-white/5 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+             <div className={`w-2.5 h-2.5 rounded-full ${ipLoading ? 'bg-slate-500 animate-pulse' : isIpAuthorized ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+               {ipLoading ? 'جاري التحقق من الشبكة...' : isIpAuthorized ? 'اتصال آمن (WiFi المركز)' : 'شبكة غير مصرح بها'}
              </p>
           </div>
+          <div className="flex items-center gap-2 text-white/20">
+             <Smartphone className="w-4 h-4" />
+             <span className="text-[9px] font-black uppercase tracking-tighter">{getDeviceId().slice(0, 15)}...</span>
+          </div>
         </div>
       </div>
 
-      {/* Notifications Modal */}
       {activeNotification && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-500">
-          <div className="w-full max-w-sm bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-white/20 animate-in zoom-in-95 duration-500">
-            <div className="p-8 text-center bg-indigo-600 text-white relative">
-              <div className="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center mx-auto mb-4 border border-white/20">
-                <BellRing className="w-10 h-10 text-white animate-bounce" />
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-500">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/20 text-slate-900 animate-in zoom-in-95 duration-500">
+            <div className="p-10 text-center space-y-6">
+              <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner">
+                <BellRing className="w-10 h-10 animate-bounce" />
               </div>
-              <h3 className="text-xl font-black">{activeNotification.title}</h3>
-              <div className="absolute top-4 left-4 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-indigo-200">
-                <ShieldCheck className="w-3 h-3" /> تعميم إداري
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black tracking-tight">{activeNotification.title}</h3>
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">إشعار هام من الإدارة</p>
               </div>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              <div className="p-5 bg-indigo-50/50 rounded-3xl border border-indigo-100 text-center">
-                <p className="text-sm font-bold text-slate-700 leading-relaxed">
-                  {activeNotification.message}
-                </p>
+              <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                <p className="text-slate-600 font-bold leading-relaxed text-right">{activeNotification.message}</p>
               </div>
-              <button
+              <button 
                 onClick={handleDismissNotif}
-                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-slate-200 hover:bg-black transition-all active:scale-95 flex items-center justify-center gap-2"
+                className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl hover:bg-black transition-all flex items-center justify-center gap-2 uppercase text-xs tracking-widest shadow-xl active:scale-95"
               >
-                <Check className="w-4 h-4" /> قرأت وفهمت التعليمات
+                <Check className="w-5 h-5" /> لقد قرأت التعليمات وأفهمها
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {isSubmitting && (
-        <div className="fixed inset-0 z-[110] bg-white/60 backdrop-blur-sm flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-            <p className="text-xs font-black text-indigo-900 uppercase tracking-widest">تحقق أمني صارم جاري...</p>
           </div>
         </div>
       )}
