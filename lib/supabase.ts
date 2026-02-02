@@ -1,8 +1,13 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 
-// استبدل YOUR_ACTUAL_ANON_KEY_FROM_SUPABASE بمفتاح anon public الفعلي من لوحة تحكم Supabase
 const supabaseUrl = 'https://riuhndnuziycarmlllzs.supabase.co';
-const supabaseKey = 'sb_publishable_q3BMLdmSMAgzxbreYXlaWg_Nur-Gm5S'; 
+// يرجى استبدال هذا النص بمفتاح ANON الفعلي من Supabase
+const supabaseKey = 'YOUR_ACTUAL_ANON_KEY_FROM_SUPABASE'; 
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// التحقق مما إذا كان المفتاح هو النص التجريبي لمنع الانهيار
+const isPlaceholder = supabaseKey === 'YOUR_ACTUAL_ANON_KEY_FROM_SUPABASE';
+
+export const supabase = createClient(supabaseUrl, isPlaceholder ? 'none' : supabaseKey);
+
+export const checkSupabaseConnection = () => !isPlaceholder;
