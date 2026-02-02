@@ -1,5 +1,5 @@
 
-import { UserRole, Center, Employee, Admin, MessageTemplate, SystemSettings } from './types';
+import { UserRole, Center, Employee, Admin, MessageTemplate, SystemSettings } from './types.ts';
 
 export const INITIAL_CENTERS: Center[] = [
   { id: 'c1', name: 'مركز الرياض الرئيسي', defaultStartTime: '08:00', defaultEndTime: '16:00' },

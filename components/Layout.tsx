@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { useApp } from '../store';
-import { UserRole } from '../types';
+import { useApp } from '../store.tsx';
+import { UserRole } from '../types.ts';
 import { 
   Building2, Users, UserCog, BarChart3, 
   Calendar, Bell, MessageSquare, Settings, 
@@ -36,18 +36,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
 
   return (
     <div className="min-h-screen flex bg-[#f8fafc] font-cairo overflow-hidden">
-      {/* Sidebar Mobile Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] lg:hidden" onClick={() => setSidebarOpen(false)}></div>
       )}
 
-      {/* Sidebar Content */}
-      <aside className={`fixed inset-y-0 right-0 z-[70] w-72 bg-slate-900 text-white transform transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 right-0 z-[70] w-72 bg-slate-900 text-white transform transition-all duration-500 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : 'translate-x-full'}`}>
         <div className="flex flex-col h-full">
-          {/* Logo Section */}
           <div className="p-8 border-b border-slate-800/50">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
+              <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
                 <ShieldCheck className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -57,7 +54,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
             </div>
           </div>
 
-          {/* Navigation */}
           <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto">
             {filteredItems.map((item) => (
               <button
@@ -65,7 +61,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
                 onClick={() => { onNavigate(item.id); setSidebarOpen(false); }}
                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all group ${
                   activePage === item.id 
-                  ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20 translate-x-[-4px]' 
+                  ? 'bg-indigo-600 text-white shadow-xl translate-x-[-4px]' 
                   : 'text-slate-400 hover:bg-slate-800 hover:text-white'
                 }`}
               >
@@ -76,10 +72,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
             ))}
           </nav>
 
-          {/* User Profile Footer */}
           <div className="p-4 bg-slate-950/50 border-t border-slate-800/50">
             <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black border border-indigo-500/20">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-black">
                 {currentUser.name.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
@@ -88,8 +83,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
               </div>
               <button 
                 onClick={() => setCurrentUser(null)}
-                className="p-2 text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors"
-                title="تسجيل الخروج"
+                className="p-2 text-rose-400 hover:bg-rose-500/10 rounded-xl"
               >
                 <LogOut className="w-4 h-4" />
               </button>
@@ -98,9 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
         </div>
       </aside>
 
-      {/* Main Container */}
       <div className="flex-1 lg:pr-72 flex flex-col min-h-screen">
-        {/* Top Header */}
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-100 flex items-center justify-between px-8 sticky top-0 z-[50]">
           <div className="flex items-center gap-4">
             <button onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 text-slate-500 bg-slate-100 rounded-xl">
@@ -110,27 +102,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate }) => 
               <h2 className="text-xl font-black text-slate-900">
                 {menuItems.find(i => i.id === activePage)?.label || 'الرئيسية'}
               </h2>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">System Live • Secured Session</p>
-              </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-             <div className="hidden md:flex flex-col items-end">
-               <span className="text-xs font-black text-indigo-600 uppercase tracking-tighter">Current Access</span>
-               <span className="text-[10px] text-slate-400 font-bold">
-                 {currentUser.role === UserRole.SUPER_ADMIN ? 'Super Administrator' : 'Manager'}
-               </span>
-             </div>
-             <div className="w-10 h-10 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center">
-                <UserCog className="w-5 h-5 text-slate-400" />
-             </div>
           </div>
         </header>
 
-        {/* Page Content */}
         <div className="p-8 max-w-[1600px] mx-auto w-full">
           {children}
         </div>
