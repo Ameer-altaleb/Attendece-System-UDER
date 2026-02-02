@@ -1,18 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppProvider, useApp } from './store';
-import Layout from './components/Layout';
-import AttendancePublic from './pages/AttendancePublic';
-import Dashboard from './pages/Dashboard';
-import Employees from './pages/Employees';
-import CentersPage from './pages/CentersPage';
-import AdminsPage from './pages/AdminsPage';
-import Reports from './pages/Reports';
-import HolidaysPage from './pages/HolidaysPage';
-import NotificationsPage from './pages/NotificationsPage';
-import MessagesPage from './pages/MessagesPage';
-import SettingsPage from './pages/SettingsPage';
-import { UserRole } from './types';
+import { AppProvider, useApp } from './store.tsx';
+import Layout from './components/Layout.tsx';
+import AttendancePublic from './pages/AttendancePublic.tsx';
+import Dashboard from './pages/Dashboard.tsx';
+import Employees from './pages/Employees.tsx';
+import CentersPage from './pages/CentersPage.tsx';
+import AdminsPage from './pages/AdminsPage.tsx';
+import Reports from './pages/Reports.tsx';
+import HolidaysPage from './pages/HolidaysPage.tsx';
+import NotificationsPage from './pages/NotificationsPage.tsx';
+import MessagesPage from './pages/MessagesPage.tsx';
+import SettingsPage from './pages/SettingsPage.tsx';
+import { UserRole } from './types.ts';
 import { Loader2 } from 'lucide-react';
 
 const MainApp: React.FC = () => {
@@ -44,12 +44,11 @@ const MainApp: React.FC = () => {
     }
   };
 
-  // شاشة التحميل الأولية
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-4 font-cairo">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="text-white font-black text-sm uppercase tracking-widest animate-pulse">Syncing with Server...</p>
+        <p className="text-white font-black text-sm uppercase tracking-widest animate-pulse">جاري الاتصال بالسيرفر...</p>
       </div>
     );
   }
