@@ -1,177 +1,176 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Send, X, Bot, User, Loader2, MessageSquareText, TrendingUp, BarChart } from 'lucide-react';
-import { useApp } from '../store.tsx';
 import { GoogleGenAI } from "@google/genai";
+import { useApp } from '../store.tsx';
+import { MessageSquare, X, Send, Bot, User, Loader2, Sparkles, ChevronDown } from 'lucide-react';
+
+interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+}
 
 const GeminiAssistant: React.FC = () => {
-  const { employees, attendance, centers, holidays } = useApp();
+  const { employees, centers, attendance, settings } = useApp();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<{role: 'user' | 'bot', text: string}[]>([
-    { role: 'bot', text: 'مرحباً! أنا مساعدك الذكي من Gemini. كيف يمكنني مساعدتك في تحليل بيانات الموظفين والمراكز اليوم؟' }
-  ]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isTyping]);
 
   const generateContext = () => {
-    return {
-      appName: "نظام إدارة الحضور والانصراف - Relief Experts",
-      currentDate: new Date().toLocaleDateString('ar-SA'),
-      stats: {
-        totalEmployees: employees.length,
-        totalCenters: centers.length,
-        centersNames: centers.map(c => c.name),
-        todayAttendanceCount: attendance.filter(a => a.date === new Date().toISOString().split('T')[0]).length,
-        lateTodayCount: attendance.filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'late').length,
-        holidaysCount: holidays.length
-      },
-      sampleData: attendance.slice(0, 10).map(a => ({
-        employee: employees.find(e => e.id === a.employeeId)?.name,
-        center: centers.find(c => c.id === a.centerId)?.name,
-        status: a.status,
-        delay: a.delayMinutes
-      }))
-    };
+    const today = new Date().toISOString().split('T')[0];
+    const todayRecords = attendance.filter(a => a.date === today);
+    const activeCenters = centers.filter(c => c.isActive);
+    
+    return `
+      أنت المساعد الذكي لنظام "Relief Experts Management".
+      إليك بيانات النظام اللحظية الحالية:
+      - عدد الموظفين الإجمالي: ${employees.length}
+      - عدد المراكز النشطة: ${activeCenters.length}
+      - سجلات الحضور اليوم (${today}): ${todayRecords.length}
+      - حالات التأخير المرصودة اليوم: ${todayRecords.filter(r => r.status === 'late').length}
+      - اسم النظام الحالي: ${settings.systemName}
+      
+      تعليمات:
+      1. أجب باختصار شديد ولباقة.
+      2. لا تذكر أي بيانات تقنية عن قاعدة البيانات.
+      3. إذا سألك الموظف عن حالته، أخبره بالتوجه لسجل التقارير.
+      4. لغة الإجابة: العربية دائماً.
+    `;
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isTyping) return;
 
-    const userMessage = input;
+    const userMessage = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
-    setIsLoading(true);
+    setIsTyping(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const context = generateContext();
+      // Initialize AI according to standards
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
       
-      const prompt = `
-        أنت مساعد ذكي خبير في تحليل البيانات لنظام إدارة حضور وانصراف موظفي Relief Experts.
-        سياق البيانات الحالي: ${JSON.stringify(context)}
-        سؤال المستخدم: ${userMessage}
-        
-        تعليمات:
-        1. أجب باللغة العربية بأسلوب مهني ومختصر.
-        2. استخدم البيانات المقدمة في السياق للإجابة بدقة.
-        3. إذا طُلب منك إحصائيات، قم بحسابها بناءً على المعلومات المتاحة.
-        4. إذا سألك عن شيء غير موجود في البيانات، أخبره بلطف أنك مبرمج لتحليل بيانات الحضور فقط.
-      `;
-
       const response = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: prompt,
+        model: 'gemini-3-flash-preview',
+        contents: userMessage,
+        config: {
+          systemInstruction: generateContext(),
+          temperature: 0.7,
+        },
       });
 
-      const botResponse = response.text || "عذراً، لم أتمكن من معالجة الطلب حالياً.";
-      setMessages(prev => [...prev, { role: 'bot', text: botResponse }]);
+      const reply = response.text || 'عذراً، لم أستطع فهم ذلك. هل يمكنك إعادة الصياغة؟';
+      setMessages(prev => [...prev, { role: 'model', text: reply }]);
     } catch (error) {
-      console.error(error);
-      setMessages(prev => [...prev, { role: 'bot', text: 'حدث خطأ أثناء الاتصال بـ Gemini. يرجى التأكد من إعدادات الربط.' }]);
+      console.error('Gemini Assistant Error:', error);
+      setMessages(prev => [...prev, { 
+        role: 'model', 
+        text: 'حدث خطأ تقني أثناء الاتصال بالمساعد الذكي. يرجى التحقق من مفتاح الـ API في إعدادات Vercel.' 
+      }]);
     } finally {
-      setIsLoading(false);
+      setIsTyping(false);
     }
   };
 
   return (
-    <div className="fixed bottom-8 left-8 z-[200] font-cairo" dir="rtl">
-      {/* Chat Window */}
-      {isOpen && (
-        <div className="absolute bottom-20 left-0 w-[400px] h-[600px] bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-100 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-500 origin-bottom-left">
-          {/* Header */}
-          <div className="bg-slate-900 p-6 text-white flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center animate-pulse">
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black">مساعد Gemini الذكي</h3>
-                <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">AI Data Analyst</p>
-              </div>
-            </div>
-            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Messages Area */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
-                <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed shadow-sm border ${
-                  msg.role === 'user' 
-                    ? 'bg-white border-slate-100 text-slate-700' 
-                    : 'bg-indigo-600 border-indigo-500 text-white font-bold'
-                }`}>
-                  <div className="flex items-center gap-2 mb-1 opacity-50 text-[10px] font-black uppercase">
-                    {msg.role === 'user' ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
-                    {msg.role === 'user' ? 'أنت' : 'Gemini'}
-                  </div>
-                  {msg.text}
-                </div>
-              </div>
-            ))}
-            {isLoading && (
-              <div className="flex justify-end">
-                <div className="bg-indigo-50 p-4 rounded-2xl flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
-                  <span className="text-xs font-black text-indigo-600">جاري التحليل...</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Input Area */}
-          <div className="p-6 bg-white border-t border-slate-100">
-            <div className="flex gap-2">
-              <input 
-                type="text" 
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="اسأل عن إحصائيات اليوم أو الموظفين..."
-                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:outline-none focus:border-indigo-600 transition-all"
-              />
-              <button 
-                onClick={handleSend}
-                disabled={!input.trim() || isLoading}
-                className="w-12 h-12 bg-indigo-600 text-white rounded-xl flex items-center justify-center hover:bg-indigo-700 transition-all disabled:opacity-50"
-              >
-                <Send className="w-5 h-5 mr-1" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toggle Button - Modified for Icon Only and Left Position */}
-      <button 
+    <div className="fixed bottom-8 left-8 z-[100] font-cairo" dir="rtl">
+      {/* Floating Button */}
+      <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`group relative flex items-center justify-center w-16 h-16 rounded-full shadow-2xl transition-all hover:scale-110 active:scale-95 ${
-          isOpen ? 'bg-rose-500 text-white' : 'bg-slate-900 text-white'
+        className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 transform hover:scale-110 active:scale-90 ${
+          isOpen ? 'bg-slate-900 rotate-90' : 'bg-indigo-600'
         }`}
-        title={isOpen ? 'إغلاق المساعد' : 'اسأل Gemini'}
       >
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
-          isOpen ? 'bg-white/20' : 'bg-indigo-600'
-        }`}>
-          {isOpen ? <X className="w-6 h-6" /> : <Sparkles className="w-6 h-6 animate-pulse" />}
-        </div>
-        
+        {isOpen ? <X className="w-8 h-8 text-white" /> : <Bot className="w-8 h-8 text-white animate-pulse" />}
         {!isOpen && (
-          <div className="absolute -top-1 -left-1 flex h-5 w-5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-5 w-5 bg-indigo-500 border-2 border-white"></span>
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 rounded-full border-2 border-white flex items-center justify-center">
+             <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></span>
           </div>
         )}
       </button>
+
+      {/* Chat Window */}
+      <div className={`absolute bottom-20 left-0 w-[350px] md:w-[400px] bg-white rounded-[2.5rem] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] border border-slate-100 flex flex-col transition-all duration-500 origin-bottom-left ${
+        isOpen ? 'scale-100 opacity-100 translate-y-0' : 'scale-0 opacity-0 translate-y-10 pointer-events-none'
+      }`}>
+        {/* Header */}
+        <div className="p-6 bg-slate-900 rounded-t-[2.5rem] text-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black">مساعد Relief Experts</h4>
+              <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest">AI Strategic Analyst</p>
+            </div>
+          </div>
+          <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white">
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Messages Space */}
+        <div 
+          ref={scrollRef}
+          className="flex-1 h-[400px] overflow-y-auto p-6 space-y-4 bg-slate-50/50 custom-scrollbar"
+        >
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+              <Bot className="w-12 h-12 text-indigo-600" />
+              <p className="text-xs font-bold text-slate-500">مرحباً! أنا مساعدك الذكي. يمكنني مساعدتك في تحليل بيانات الحضور أو الإجابة على استفساراتك حول النظام.</p>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2`}>
+              <div className={`max-w-[85%] p-4 rounded-2xl text-xs font-bold leading-relaxed ${
+                msg.role === 'user' 
+                ? 'bg-indigo-600 text-white rounded-br-none shadow-lg shadow-indigo-100' 
+                : 'bg-white text-slate-700 border border-slate-100 rounded-bl-none shadow-sm'
+              }`}>
+                {msg.text}
+              </div>
+            </div>
+          ))}
+
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="bg-white p-4 rounded-2xl rounded-bl-none border border-slate-100 shadow-sm flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+                <span className="text-[10px] font-black text-slate-400 uppercase">جاري التفكير...</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="p-6 bg-white rounded-b-[2.5rem] border-t border-slate-50">
+          <div className="relative flex items-center">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="اسألني أي شيء عن النظام..."
+              className="w-full pr-6 pl-14 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700 text-sm"
+            />
+            <button
+              onClick={handleSend}
+              disabled={!input.trim() || isTyping}
+              className="absolute left-2 w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center hover:bg-black transition-all disabled:opacity-20 active:scale-95 shadow-lg"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
