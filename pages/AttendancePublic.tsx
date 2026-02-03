@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { 
   LogIn, LogOut, CheckCircle2, ShieldAlert, Smartphone, 
-  BellRing, Check, Loader2, ShieldCheck, MapPin, User, Clock 
+  BellRing, Check, Loader2, ShieldCheck, MapPin, User, Clock, Globe, AlertTriangle
 } from 'lucide-react';
 import { calculateDelay, calculateEarlyDeparture, calculateWorkingHours, getTodayDateString } from '../utils/attendanceLogic.ts';
 import { AttendanceRecord, Employee, Notification } from '../types.ts';
@@ -24,7 +24,13 @@ const AttendancePublic: React.FC = () => {
   const { centers, attendance, addAttendance, updateAttendance, templates, notifications, refreshData } = useApp();
   const [selectedCenterId, setSelectedCenterId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  
+  // Time Synchronization State (Target: Syria/Turkey GMT+3)
+  const [timeOffset, setTimeOffset] = useState(0);
+  const [isTimeSynced, setIsTimeSynced] = useState(false);
+  const [syncError, setSyncError] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' | 'security' } | null>(null);
   const [userIP, setUserIP] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,6 +39,53 @@ const AttendancePublic: React.FC = () => {
   const [employeesList, setEmployeesList] = useState<Employee[]>([]);
 
   const activeCenters = useMemo(() => centers.filter(c => c.isActive), [centers]);
+
+  // Network Time Sync Logic targeting Syria/Turkey Time
+  const syncWithNetworkTime = async () => {
+    // We target Istanbul/Damascus as they share the same time zone (GMT+3)
+    const timeAPIs = [
+      'https://timeapi.io/api/Time/current/zone?timeZone=Europe/Istanbul',
+      'https://worldtimeapi.org/api/timezone/Europe/Istanbul',
+      'https://worldtimeapi.org/api/timezone/Asia/Damascus'
+    ];
+
+    for (const apiUrl of timeAPIs) {
+      try {
+        const start = Date.now();
+        const response = await fetch(apiUrl, { cache: 'no-store' });
+        if (!response.ok) throw new Error('API Response Error');
+        
+        const data = await response.json();
+        // TimeAPI.io (dateTime), WorldTimeAPI (datetime)
+        const remoteDateStr = data.dateTime || data.datetime;
+        const networkTime = new Date(remoteDateStr).getTime();
+        
+        const end = Date.now();
+        const latency = (end - start) / 2;
+        
+        const correctedNetworkTime = networkTime + latency;
+        const localDeviceTime = Date.now();
+        
+        // Offset is the difference between forced Regional Time and Local Device Time
+        setTimeOffset(correctedNetworkTime - localDeviceTime);
+        setIsTimeSynced(true);
+        setSyncError(false);
+        console.log(`Time synced with Regional Server (GMT+3) via ${apiUrl}. Offset: ${correctedNetworkTime - localDeviceTime}ms`);
+        return; 
+      } catch (err) {
+        console.warn(`Failed to sync with ${apiUrl}:`, err);
+      }
+    }
+
+    setIsTimeSynced(false);
+    setSyncError(true);
+  };
+
+  useEffect(() => {
+    syncWithNetworkTime();
+    const syncInterval = setInterval(syncWithNetworkTime, 300000); // Re-sync every 5 min
+    return () => clearInterval(syncInterval);
+  }, []);
 
   useEffect(() => {
     const fetchEmps = async () => {
@@ -51,7 +104,12 @@ const AttendancePublic: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timer = setInterval(() => {
+      // The current time is always local device time + the calculated offset to Regional GMT+3
+      const syncedDate = new Date(Date.now() + timeOffset);
+      setCurrentTime(syncedDate);
+    }, 1000);
+    
     setIpLoading(true);
     fetch('https://api.ipify.org?format=json')
       .then(res => res.json())
@@ -64,7 +122,7 @@ const AttendancePublic: React.FC = () => {
         setIpLoading(false);
       });
     return () => clearInterval(timer);
-  }, []);
+  }, [timeOffset]);
 
   const selectedCenter = useMemo(() => centers.find(c => c.id === selectedCenterId), [centers, selectedCenterId]);
   
@@ -95,7 +153,10 @@ const AttendancePublic: React.FC = () => {
     setMessage(null);
 
     try {
+      // Crucial: Use currentSyncedTime which is GMT+3 from network
+      const currentSyncedTime = new Date(Date.now() + timeOffset);
       const currentDeviceId = getDeviceId();
+      
       if (selectedCenter.authorizedIP && userIP !== selectedCenter.authorizedIP) {
         setMessage({ 
           text: `فشل التحقق الشبكي: يجب الاتصال بشبكة WiFi المركز (${selectedCenter.name}) حصراً.`, 
@@ -141,7 +202,7 @@ const AttendancePublic: React.FC = () => {
         await supabase.from('employees').update({ deviceId: currentDeviceId }).eq('id', selectedEmployeeId);
       }
 
-      const today = getTodayDateString();
+      const today = format(currentSyncedTime, 'yyyy-MM-dd');
       const { data: attendanceData } = await supabase
         .from('attendance')
         .select('*')
@@ -153,13 +214,13 @@ const AttendancePublic: React.FC = () => {
         if (attendanceData) {
           setMessage({ text: 'لقد سجلت دخولك مسبقاً لهذا اليوم.', type: 'error' });
         } else {
-          const delay = calculateDelay(new Date(), selectedCenter.defaultStartTime, selectedCenter.checkInGracePeriod);
+          const delay = calculateDelay(currentSyncedTime, selectedCenter.defaultStartTime, selectedCenter.checkInGracePeriod);
           const record: AttendanceRecord = {
             id: Math.random().toString(36).substr(2, 9),
             employeeId: selectedEmployeeId,
             centerId: dbEmployee.centerId,
             date: today,
-            checkIn: new Date().toISOString(),
+            checkIn: currentSyncedTime.toISOString(),
             status: delay > 0 ? 'late' : 'present',
             delayMinutes: delay,
             earlyDepartureMinutes: 0,
@@ -176,7 +237,7 @@ const AttendancePublic: React.FC = () => {
         } else if (attendanceData.checkOut) {
           setMessage({ text: 'لقد سجلت خروجك مسبقاً.', type: 'error' });
         } else {
-          const now = new Date();
+          const now = currentSyncedTime;
           const early = calculateEarlyDeparture(now, selectedCenter.defaultEndTime, selectedCenter.checkOutGracePeriod);
           const hours = calculateWorkingHours(new Date(attendanceData.checkIn!), now);
           await updateAttendance({
@@ -207,12 +268,10 @@ const AttendancePublic: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 md:p-6 font-cairo text-right relative overflow-hidden" dir="rtl">
-      {/* Soft Background Accents */}
       <div className="absolute top-0 left-0 w-full h-[500px] bg-indigo-600/5 -skew-y-6 -translate-y-48"></div>
       
       <div className="w-full max-w-xl space-y-8 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-1000 relative z-10">
         <div className="text-center space-y-6 md:space-y-8 flex flex-col items-center">
-          {/* Balanced Brand Identity Section - Responsive Sizes */}
           <div className="inline-flex items-center gap-4 md:gap-8 px-6 py-4 md:px-10 md:py-6 bg-white border-2 md:border-4 border-indigo-600/10 rounded-[2.5rem] shadow-[0_20px_40px_-10px_rgba(79,70,229,0.15)] transform hover:scale-[1.01] transition-all duration-500">
             <div className="w-14 h-14 md:w-16 md:h-16 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-400/30 shrink-0">
               <ShieldCheck className="w-8 h-8 md:w-10 md:h-10 text-white" />
@@ -224,15 +283,34 @@ const AttendancePublic: React.FC = () => {
             </div>
           </div>
           
-          <div className="space-y-1">
+          <div className="space-y-1 relative">
             <h1 className="text-5xl md:text-7xl font-black text-slate-900 tracking-tighter flex items-center justify-center gap-3">
               <span className="bg-slate-100/80 px-4 py-1.5 md:px-6 md:py-2 rounded-3xl shadow-inner border border-slate-200/50">
                 {format(currentTime, 'HH:mm')}
               </span>
             </h1>
-            <p className="text-slate-400 font-bold text-[11px] md:text-xs mt-3 uppercase tracking-wider">
-              {format(currentTime, 'EEEE، dd MMMM yyyy', { locale: ar })}
-            </p>
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <p className="text-slate-400 font-bold text-[11px] md:text-xs uppercase tracking-wider">
+                {format(currentTime, 'EEEE، dd MMMM yyyy', { locale: ar })}
+              </p>
+              
+              {isTimeSynced ? (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-100 rounded-full" title="تمت المزامنة بنجاح مع توقيت (سوريا/تركيا) الرسمي">
+                  <Globe className="w-3 h-3 text-emerald-500" />
+                  <span className="text-[8px] font-black text-emerald-600 uppercase">GMT+3 Sync Active</span>
+                </div>
+              ) : syncError ? (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-rose-50 border border-rose-100 rounded-full cursor-help" title="فشل الاتصال بمزود الوقت الإقليمي. تم استخدام توقيت الجهاز المحلي مؤقتاً.">
+                  <AlertTriangle className="w-3 h-3 text-rose-500" />
+                  <span className="text-[8px] font-black text-rose-600 uppercase">Device Time Mode</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-100 rounded-full" title="جاري جلب التوقيت الرسمي لسوريا وتركيا عبر الشبكة...">
+                  <Clock className="w-3 h-3 text-amber-500 animate-spin" />
+                  <span className="text-[8px] font-black text-amber-600 uppercase">Syncing Regional Time...</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -325,8 +403,8 @@ const AttendancePublic: React.FC = () => {
              </p>
           </div>
           <div className="flex items-center gap-2 text-slate-300">
-             <Smartphone className="w-4 h-4" />
-             <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest">Device Binding Active</span>
+             <Globe className={`w-4 h-4 ${isTimeSynced ? 'text-indigo-400' : 'text-slate-300'}`} />
+             <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest">{isTimeSynced ? 'Regional Time Protection: GMT+3' : syncError ? 'Security Guard: Offline Sync' : 'Syncing Regional Protection...'}</span>
           </div>
         </div>
       </div>
