@@ -1,15 +1,23 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../store';
-import { Send, Bell, User, Building2, Users, Search, Filter, X, CheckCircle, Clock, LayoutGrid, Trash2, Info } from 'lucide-react';
+import { 
+  Send, Bell, User, Building2, Users, Search, Filter, X, 
+  CheckCircle, Clock, LayoutGrid, Trash2, Info, Loader2, 
+  AlertCircle, MessageSquare, ArrowLeftRight, Check, History
+} from 'lucide-react';
 import { Notification } from '../types';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
 const NotificationsPage: React.FC = () => {
-  const { notifications, addNotification, deleteNotification, employees, centers, currentUser } = useApp();
+  const { notifications, addNotification, deleteNotification, employees, centers, currentUser, refreshData } = useApp();
   const [isModalOpen, setModalOpen] = useState(false);
   
+  // Search and Filter State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'center' | 'employee' | 'system'>('all');
+
   // Form State
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -17,179 +25,258 @@ const NotificationsPage: React.FC = () => {
   const [targetId, setTargetId] = useState('');
   const [isSending, setIsSending] = useState(false);
 
-  const handleSend = (e: React.FormEvent) => {
+  // Filtered Notifications Logic
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter(n => {
+      const matchesSearch = n.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            n.message.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesFilter = activeFilter === 'all' || 
+                           (activeFilter === 'system' && n.targetType === 'all') ||
+                           n.targetType === activeFilter;
+      return matchesSearch && matchesFilter;
+    }).sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+  }, [notifications, searchTerm, activeFilter]);
+
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !message || (targetType !== 'all' && !targetId)) return;
+    if (!title || !message || (targetType !== 'all' && !targetId)) {
+      alert('يرجى إكمال كافة البيانات المطلوبة قبل الإرسال.');
+      return;
+    }
 
     setIsSending(true);
 
-    // Simulate Processing
-    setTimeout(() => {
+    try {
       const newNotification: Notification = {
         id: Math.random().toString(36).substr(2, 9),
         title,
         message,
         targetType,
         targetId,
-        senderName: currentUser?.name || 'الإدارة',
+        senderName: currentUser?.name || 'الإدارة المركزية',
         sentAt: new Date().toISOString()
       };
 
-      addNotification(newNotification);
-      setIsSending(false);
+      await addNotification(newNotification);
+      
+      // Reset and Close
+      setTitle(''); 
+      setMessage(''); 
+      setTargetType('all'); 
+      setTargetId('');
       setModalOpen(false);
-      // Reset
-      setTitle(''); setMessage(''); setTargetType('all'); setTargetId('');
-    }, 800);
+      
+      // Refresh to ensure sync
+      await refreshData('notifications');
+    } catch (err) {
+      alert('فشل في إرسال الإشعار، يرجى التحقق من اتصال الإنترنت.');
+    } finally {
+      setIsSending(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('هل أنت متأكد من حذف هذا التنبيه؟ لن يظهر للموظفين بعد الآن.')) {
-      deleteNotification(id);
+  const handleDelete = async (id: string) => {
+    if (confirm('تنبيه: هل أنت متأكد من حذف هذا الإشعار نهائياً؟ لن يظهر للموظفين بعد الآن.')) {
+      try {
+        await deleteNotification(id);
+        await refreshData('notifications');
+      } catch (err) {
+        alert('فشل الحذف، يرجى المحاولة مرة أخرى.');
+      }
     }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-1">
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">إدارة التنبيهات المنبثقة</h1>
-          <p className="text-slate-500 font-bold">إنشاء تعاميم تظهر للموظفين فور فتحهم لنظام تسجيل الحضور</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">مركز الإشعارات المباشرة</h1>
+          <p className="text-slate-500 font-bold">بث التعاميم والرسائل الإدارية التي تظهر للموظفين فوراً</p>
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          className="bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black text-xs flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
+          className="bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 shrink-0"
         >
-          <Bell className="w-4 h-4" /> إضافة تنبيه جديد
+          <Bell className="w-5 h-5" /> إنشاء تعميم جديد
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Side: Notification History */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between px-4">
-            <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest text-right">الإشعارات النشطة حالياً</h3>
-            <span className="text-[10px] bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-black uppercase tracking-widest">{notifications.length} إشعار نظامي</span>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Search & History Column */}
+        <div className="lg:col-span-8 space-y-6">
+          
+          {/* Real Search & Filter Bar */}
+          <div className="bg-white p-4 md:p-6 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4 items-center">
+            <div className="relative flex-1 group w-full">
+              <Search className="w-5 h-5 absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-indigo-600 transition-colors" />
+              <input 
+                type="text" 
+                placeholder="ابحث في سجل الرسائل..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pr-12 pl-6 py-4 bg-slate-50/50 border border-slate-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-indigo-600/5 focus:bg-white transition-all font-bold text-slate-700"
+              />
+            </div>
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl w-full md:w-auto overflow-x-auto whitespace-nowrap scrollbar-hide">
+              {[
+                { id: 'all', label: 'الكل', icon: History },
+                { id: 'system', label: 'عام', icon: LayoutGrid },
+                { id: 'center', label: 'مراكز', icon: Building2 },
+                { id: 'employee', label: 'موظفين', icon: User }
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id as any)}
+                  className={`px-5 py-2.5 rounded-xl font-black text-[10px] uppercase transition-all flex items-center gap-2 ${
+                    activeFilter === filter.id 
+                    ? 'bg-white text-indigo-600 shadow-sm' 
+                    : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <filter.icon className="w-3.5 h-3.5" /> {filter.label}
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* Notifications List */}
           <div className="space-y-4">
-            {notifications.map((notif) => (
-              <div key={notif.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
-                <div className="flex items-start gap-5">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-                    notif.targetType === 'all' ? 'bg-indigo-50 text-indigo-600' :
-                    notif.targetType === 'center' ? 'bg-emerald-50 text-emerald-600' :
-                    'bg-amber-50 text-amber-600'
-                  }`}>
-                    {notif.targetType === 'all' ? <Users className="w-6 h-6" /> :
-                     notif.targetType === 'center' ? <Building2 className="w-6 h-6" /> :
-                     <User className="w-6 h-6" />}
-                  </div>
-                  
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <h4 className="font-black text-slate-900 text-lg">{notif.title}</h4>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-slate-400 uppercase">بواسطة: {notif.senderName}</span>
-                          <span className="text-[10px] text-slate-300">•</span>
-                          <span className="text-[10px] font-black text-slate-400 uppercase">
-                            {format(new Date(notif.sentAt), 'hh:mm a • dd MMM', { locale: ar })}
-                          </span>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleDelete(notif.id)}
-                        className="p-3 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                        title="حذف التنبيه"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+            {filteredNotifications.map((notif) => {
+              const targetName = notif.targetType === 'all' 
+                ? 'كافة الكوادر الميدانية' 
+                : notif.targetType === 'center' 
+                  ? centers.find(c => c.id === notif.targetId)?.name || 'مركز غير معروف'
+                  : employees.find(e => e.id === notif.targetId)?.name || 'موظف غير معروف';
+
+              return (
+                <div key={notif.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden animate-in slide-in-from-bottom-2">
+                  <div className="flex items-start gap-5">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-inner group-hover:rotate-3 transition-transform ${
+                      notif.targetType === 'all' ? 'bg-indigo-50 text-indigo-600' :
+                      notif.targetType === 'center' ? 'bg-emerald-50 text-emerald-600' :
+                      'bg-amber-50 text-amber-600'
+                    }`}>
+                      {notif.targetType === 'all' ? <Users className="w-7 h-7" /> :
+                       notif.targetType === 'center' ? <Building2 className="w-7 h-7" /> :
+                       <User className="w-7 h-7" />}
                     </div>
                     
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 mt-2">
-                       <p className="text-sm text-slate-600 font-bold leading-relaxed">{notif.message}</p>
-                    </div>
-
-                    <div className="pt-2 flex items-center gap-3">
-                      <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                        notif.targetType === 'all' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
-                        notif.targetType === 'center' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                        'bg-amber-50 text-amber-700 border-amber-100'
-                      }`}>
-                        المستهدف: {notif.targetType === 'all' ? 'كافة الموظفين' : notif.targetType === 'center' ? 'مركز محدد' : 'موظف محدد'}
+                    <div className="flex-1 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h4 className="font-black text-slate-900 text-lg leading-none">{notif.title}</h4>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+                            <span className="text-[10px] font-black text-indigo-600 uppercase flex items-center gap-1">
+                              <User className="w-3 h-3" /> {notif.senderName}
+                            </span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {format(new Date(notif.sentAt), 'hh:mm a • dd MMMM', { locale: ar })}
+                            </span>
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
+                               notif.targetType === 'all' ? 'bg-indigo-100 text-indigo-700' :
+                               notif.targetType === 'center' ? 'bg-emerald-100 text-emerald-700' :
+                               'bg-amber-100 text-amber-700'
+                            }`}>
+                               المستهدف: {targetName}
+                            </span>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => handleDelete(notif.id)}
+                          className="w-10 h-10 flex items-center justify-center text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all active:scale-90"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[9px] font-black text-emerald-600">
-                        <CheckCircle className="w-3.5 h-3.5" /> يظهر حالياً في النظام
+                      
+                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                         <p className="text-sm text-slate-600 font-bold leading-relaxed">{notif.message}</p>
+                      </div>
+
+                      <div className="flex items-center gap-4 pt-1">
+                        <div className="flex items-center gap-1.5 text-[9px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">
+                           <CheckCircle className="w-3.5 h-3.5" /> الإشعار فعال حالياً
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
-            {notifications.length === 0 && (
-              <div className="py-24 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-100 text-center space-y-4">
-                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200">
-                  <LayoutGrid className="w-10 h-10" />
+            {filteredNotifications.length === 0 && (
+              <div className="py-24 bg-white rounded-[3rem] border-2 border-dashed border-slate-100 text-center space-y-6">
+                <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200">
+                  <MessageSquare className="w-12 h-12" />
                 </div>
-                <div>
-                  <p className="text-slate-400 font-bold">لا توجد تنبيهات منبثقة نشطة</p>
-                  <p className="text-[10px] text-slate-300 font-bold uppercase mt-1">Pop-up notifications will appear here</p>
+                <div className="max-w-xs mx-auto">
+                  <p className="text-slate-500 font-black text-lg">لم يتم العثور على إشعارات</p>
+                  <p className="text-[10px] text-slate-300 font-bold uppercase mt-1 leading-relaxed">جرب تغيير معايير البحث أو الفلترة أو أضف إشعاراً جديداً</p>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Side: Usage Info */}
-        <div className="space-y-6">
-          <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-xl shadow-slate-200 relative overflow-hidden group">
-             <div className="relative z-10 space-y-4">
-                <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
-                  <Info className="w-6 h-6 text-white" />
+        {/* Sidebar Statistics & Instructions */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-slate-900 p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+             <div className="relative z-10 space-y-5">
+                <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <Info className="w-7 h-7 text-white" />
                 </div>
-                <h3 className="text-xl font-black">كيف يعمل النظام؟</h3>
+                <h3 className="text-xl font-black">آلية عمل التعاميم</h3>
                 <p className="text-slate-400 text-xs font-bold leading-relaxed">
-                  عند إضافة تنبيه، سيظهر فوراً كـ "نافذة منبثقة" للموظف المستهدف بمجرد اختياره لاسمه في صفحة الحضور. لا يمكن للموظف إتمام تسجيل الحضور إلا بعد الضغط على "فهمت".
+                  عند بث إشعار، يظهر للموظف المستهدف كـ "نافذة إجبارية" في واجهة الحضور. يضمن النظام أن الموظف لن يستطيع تسجيل حضوره إلا بعد تأكيد قراءة التعميم.
                 </p>
-                <ul className="space-y-2">
-                  <li className="flex items-center gap-2 text-[10px] font-black text-indigo-400">
-                    <div className="w-1 h-1 bg-indigo-400 rounded-full"></div> تنبيهات فورية
-                  </li>
-                  <li className="flex items-center gap-2 text-[10px] font-black text-indigo-400">
-                    <div className="w-1 h-1 bg-indigo-400 rounded-full"></div> ضمان القراءة
-                  </li>
-                  <li className="flex items-center gap-2 text-[10px] font-black text-indigo-400">
-                    <div className="w-1 h-1 bg-indigo-400 rounded-full"></div> حذف تلقائي من الإدارة
-                  </li>
-                </ul>
+                <div className="space-y-3 pt-2">
+                  {[
+                    { label: 'ضمان القراءة الكاملة', color: 'indigo' },
+                    { label: 'تخصيص حسب المراكز', color: 'emerald' },
+                    { label: 'أرشفة آلية للرسائل', color: 'amber' }
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                       <div className={`w-1.5 h-1.5 rounded-full bg-${item.color}-500 shadow-[0_0_8px_rgba(var(--tw-color-${item.color}-500),0.5)]`}></div>
+                       <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{item.label}</span>
+                    </div>
+                  ))}
+                </div>
              </div>
-             <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl group-hover:bg-indigo-600/20 transition-all"></div>
+             <div className="absolute -right-16 -bottom-16 w-56 h-56 bg-indigo-600/10 rounded-full blur-3xl group-hover:bg-indigo-600/20 transition-all"></div>
           </div>
 
-          <div className="bg-amber-50 p-8 rounded-[2.5rem] border border-amber-100 shadow-sm space-y-4">
-             <div className="flex items-center gap-3 text-amber-700">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
-                  <Clock className="w-5 h-5" />
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-4">إحصائيات الإشعارات</h4>
+             <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                   <p className="text-2xl font-black text-slate-900">{notifications.length}</p>
+                   <p className="text-[8px] font-black text-slate-400 uppercase mt-1">إجمالي المراسلات</p>
                 </div>
-                <h4 className="font-black text-sm">ملاحظة الحذف</h4>
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                   <p className="text-2xl font-black text-indigo-600">{notifications.filter(n => n.targetType === 'all').length}</p>
+                   <p className="text-[8px] font-black text-slate-400 uppercase mt-1">تعاميم عامة</p>
+                </div>
              </div>
-             <p className="text-xs text-amber-800/70 font-bold leading-relaxed">
-                بمجرد قيامك بحذف التنبيه من هذه اللوحة، سيتوقف ظهوره فوراً لجميع الموظفين.
-             </p>
+             <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center gap-3">
+                <History className="w-5 h-5 text-emerald-600" />
+                <div>
+                   <p className="text-[9px] font-black text-emerald-700 uppercase">آخر تحديث للمزامنة</p>
+                   <p className="text-[10px] font-bold text-emerald-900">{format(new Date(), 'hh:mm:ss a')}</p>
+                </div>
+             </div>
           </div>
         </div>
       </div>
 
-      {/* Add Notification Modal */}
+      {/* Modern Add Notification Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-white/20">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300 overflow-y-auto">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-xl shadow-2xl overflow-hidden border border-white/20 my-auto">
             <div className="p-8 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
               <div className="space-y-1">
-                <h3 className="text-xl font-black text-slate-900">إنشاء تنبيه منبثق جديد</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Create Internal Alert</p>
+                <h3 className="text-xl font-black text-slate-900">إنشاء تعميم ذكي</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">New Administrative Broadcast</p>
               </div>
               <button onClick={() => setModalOpen(false)} className="w-10 h-10 flex items-center justify-center text-slate-400 hover:bg-slate-100 rounded-xl transition-colors">
                 <X className="w-6 h-6" />
@@ -197,31 +284,37 @@ const NotificationsPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSend} className="p-8 space-y-6">
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="group">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">عنوان التنبيه</label>
-                  <input
-                    type="text" required value={title} onChange={(e) => setTitle(e.target.value)}
-                    className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700"
-                    placeholder="مثال: تعليمات جديدة بخصوص السلامة"
-                  />
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">عنوان التعميم</label>
+                  <div className="relative">
+                    <MessageSquare className="w-5 h-5 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input
+                      type="text" required value={title} onChange={(e) => setTitle(e.target.value)}
+                      className="w-full pr-14 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700"
+                      placeholder="مثال: تعليمات صرف المستحقات الميدانية"
+                    />
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="group">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">الظهور لـ</label>
-                    <select
-                      value={targetType} onChange={(e) => { setTargetType(e.target.value as any); setTargetId(''); }}
-                      className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-600 appearance-none"
-                    >
-                      <option value="all">كافة الموظفين</option>
-                      <option value="center">مركز محدد</option>
-                      <option value="employee">موظف محدد</option>
-                    </select>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">نطاق البث</label>
+                    <div className="relative">
+                      <ArrowLeftRight className="w-4 h-4 absolute right-5 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <select
+                        value={targetType} onChange={(e) => { setTargetType(e.target.value as any); setTargetId(''); }}
+                        className="w-full pr-12 pl-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-600 appearance-none"
+                      >
+                        <option value="all">كافة الموظفين والمراكز</option>
+                        <option value="center">مركز ميداني محدد</option>
+                        <option value="employee">موظف بعينه</option>
+                      </select>
+                    </div>
                   </div>
                   
                   {targetType !== 'all' && (
-                    <div className="group">
+                    <div className="group animate-in slide-in-from-right-4">
                       <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">
                         {targetType === 'center' ? 'تحديد المركز' : 'تحديد الموظف'}
                       </label>
@@ -229,7 +322,7 @@ const NotificationsPage: React.FC = () => {
                         required value={targetId} onChange={(e) => setTargetId(e.target.value)}
                         className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-black text-slate-600 appearance-none"
                       >
-                        <option value="">-- اختر --</option>
+                        <option value="">-- اختر من القائمة --</option>
                         {targetType === 'center' 
                           ? centers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)
                           : employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)
@@ -240,11 +333,11 @@ const NotificationsPage: React.FC = () => {
                 </div>
 
                 <div className="group">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">محتوى التنبيه (يظهر للموظف)</label>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 mr-2 tracking-widest">محتوى الرسالة (تظهر بوضوح للمستلم)</label>
                   <textarea
-                    required rows={4} value={message} onChange={(e) => setMessage(e.target.value)}
+                    required rows={5} value={message} onChange={(e) => setMessage(e.target.value)}
                     className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-bold text-slate-700 resize-none"
-                    placeholder="اكتب التعليمات أو الإشعار الذي يجب على الموظف قراءته..."
+                    placeholder="اكتب التعليمات الرسمية هنا، سيتم تنسيقها تلقائياً للموظف..."
                   ></textarea>
                 </div>
               </div>
@@ -253,12 +346,12 @@ const NotificationsPage: React.FC = () => {
                 <button 
                   type="submit" 
                   disabled={isSending}
-                  className="flex-2 bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 flex-grow uppercase text-xs tracking-widest disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-2 bg-indigo-600 text-white font-black py-4 rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 flex-grow uppercase text-xs tracking-widest disabled:opacity-50 flex items-center justify-center gap-3 active:scale-95"
                 >
-                  {isSending ? 'جاري النشر...' : <><Bell className="w-4 h-4" /> نشر التنبيه في النظام</>}
+                  {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Send className="w-5 h-5" /> بث التعميم فوراً</>}
                 </button>
                 <button type="button" onClick={() => setModalOpen(false)} className="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl hover:bg-slate-200 transition-all uppercase text-xs tracking-widest">
-                  إلغاء
+                  تراجع
                 </button>
               </div>
             </form>
