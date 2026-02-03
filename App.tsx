@@ -12,11 +12,11 @@ import HolidaysPage from './pages/HolidaysPage.tsx';
 import NotificationsPage from './pages/NotificationsPage.tsx';
 import MessagesPage from './pages/MessagesPage.tsx';
 import SettingsPage from './pages/SettingsPage.tsx';
-import { ShieldAlert, Settings as SettingsIcon, Lock, Info, UserCheck } from 'lucide-react';
+import { ShieldAlert, Settings as SettingsIcon, Lock, Info, UserCheck, Loader2 } from 'lucide-react';
 import { INITIAL_ADMINS } from './constants.tsx';
 
 const MainApp: React.FC = () => {
-  const { currentUser, setCurrentUser, admins = [] } = useApp();
+  const { currentUser, setCurrentUser, admins = [], isLoading } = useApp();
   const [activePage, setActivePage] = useState('dashboard');
   const [view, setView] = useState<'public' | 'admin' | 'login'>('public');
   
@@ -24,6 +24,7 @@ const MainApp: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showHint, setShowHint] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   useEffect(() => {
     if (!currentUser && view === 'admin') {
@@ -34,38 +35,46 @@ const MainApp: React.FC = () => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLoggingIn(true);
     
-    const normalizedInput = username.trim().toLowerCase();
-    
-    // البحث في القائمة الحالية (قاعدة البيانات + الافتراضية)
-    let admin = admins.find(a => a.username?.trim().toLowerCase() === normalizedInput);
-    
-    // خطة بديلة: إذا لم يجد المستخدم في القائمة المحملة، ابحث في الثوابت الافتراضية
-    if (!admin) {
-      admin = INITIAL_ADMINS.find(a => a.username.toLowerCase() === normalizedInput);
-    }
-    
-    if (admin) {
-      if (admin.isBlocked) {
-        setError('عذراً، هذا الحساب معطل حالياً من قبل الإدارة العليا.');
-        return;
+    setTimeout(() => {
+      const normalizedInput = username.trim().toLowerCase();
+      
+      // الدخول بحساب المشرف الرئيسي الافتراضي (صمام أمان)
+      if (normalizedInput === 'aaltaleb@reliefexperts.org' && password === '123') {
+        const rootAdmin = INITIAL_ADMINS.find(a => a.username === 'aaltaleb@reliefexperts.org');
+        if (rootAdmin) {
+          setCurrentUser(rootAdmin);
+          setView('admin');
+          setIsLoggingIn(false);
+          return;
+        }
       }
+
+      // البحث في قائمة المشرفين المحملة
+      const admin = (admins || []).find(a => a.username?.trim().toLowerCase() === normalizedInput);
       
-      // التحقق من كلمة المرور (مع دعم كلمة المرور الافتراضية '123' كـ fallback للمشرف)
-      const isValidPassword = admin.password === password || (admin.username === 'aaltaleb@reliefexperts.org' && password === '123');
-      
-      if (isValidPassword) {
-        setCurrentUser(admin);
-        setView('admin');
-        setError('');
-        setUsername('');
-        setPassword('');
+      if (admin) {
+        if (admin.isBlocked) {
+          setError('عذراً، هذا الحساب معطل حالياً.');
+          setIsLoggingIn(false);
+          return;
+        }
+        
+        if (admin.password === password) {
+          setCurrentUser(admin);
+          setView('admin');
+          setError('');
+          setUsername('');
+          setPassword('');
+        } else {
+          setError('كلمة المرور غير صحيحة');
+        }
       } else {
-        setError('كلمة المرور غير صحيحة');
+        setError('اسم المستخدم غير صحيح أو غير مسجل');
       }
-    } else {
-      setError('المستخدم غير موجود في سجلات النظام');
-    }
+      setIsLoggingIn(false);
+    }, 500);
   };
 
   if (view === 'admin' && currentUser) {
@@ -94,7 +103,6 @@ const MainApp: React.FC = () => {
   if (view === 'login' && !currentUser) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-cairo overflow-hidden relative">
-        {/* Background Accents */}
         <div className="absolute top-0 right-0 w-full h-full bg-indigo-600/5 -skew-y-12 translate-y-[-50%]"></div>
         <div className="absolute bottom-0 left-0 w-full h-full bg-indigo-600/5 skew-y-12 translate-y-[50%]"></div>
 
@@ -109,9 +117,7 @@ const MainApp: React.FC = () => {
             </div>
             
             {error && (
-              <div className={`text-[11px] font-black text-center p-4 rounded-2xl border flex items-center justify-center gap-2 animate-in slide-in-from-top-2 duration-300 ${
-                error.includes('معطل') ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-rose-50 text-rose-600 border-rose-100'
-              }`}>
+              <div className="text-[11px] font-black text-center p-4 rounded-2xl border flex items-center justify-center gap-2 animate-in slide-in-from-top-2 duration-300 bg-rose-50 text-rose-600 border-rose-100">
                 <ShieldAlert className="w-4 h-4 shrink-0" /> {error}
               </div>
             )}
@@ -144,8 +150,13 @@ const MainApp: React.FC = () => {
             </div>
 
             <div className="space-y-4 pt-2">
-              <button className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.75rem] hover:bg-black transition-all shadow-2xl shadow-slate-200 uppercase text-xs tracking-widest active:scale-95 flex items-center justify-center gap-3">
-                <UserCheck className="w-5 h-5" /> دخول النظام
+              <button 
+                type="submit" 
+                disabled={isLoggingIn}
+                className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.75rem] hover:bg-black transition-all shadow-2xl shadow-slate-200 uppercase text-xs tracking-widest active:scale-95 flex items-center justify-center gap-3 disabled:opacity-50"
+              >
+                {isLoggingIn ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserCheck className="w-5 h-5" />}
+                {isLoggingIn ? 'جاري التحقق...' : 'دخول النظام'}
               </button>
               
               <button type="button" onClick={() => setView('public')} className="w-full text-slate-400 font-bold py-2 text-[10px] uppercase tracking-widest hover:text-indigo-600 transition-colors flex items-center justify-center gap-2">
@@ -153,14 +164,13 @@ const MainApp: React.FC = () => {
               </button>
             </div>
 
-            {/* Hint Section */}
             <div className="pt-6 border-t border-slate-50">
                <button 
                  type="button"
                  onClick={() => setShowHint(!showHint)}
                  className="w-full flex items-center justify-center gap-2 text-indigo-600/40 hover:text-indigo-600 font-black text-[10px] uppercase transition-colors"
                >
-                 <Info className="w-3.5 h-3.5" /> هل نسيت بيانات الدخول الافتراضية؟
+                 <Info className="w-3.5 h-3.5" /> بيانات الدخول الافتراضية
                </button>
                {showHint && (
                  <div className="mt-4 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 animate-in fade-in slide-in-from-top-2">

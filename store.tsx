@@ -43,7 +43,6 @@ interface AppContextType {
   deleteAdmin: (id: string) => Promise<void>;
   addHoliday: (holiday: Holiday) => Promise<void>;
   deleteHoliday: (id: string) => Promise<void>;
-  importAppData: (data: any) => Promise<void>;
   refreshData: (tableName?: string) => Promise<void>;
   testConnection: () => Promise<void>;
 }
@@ -67,18 +66,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fetchTable = async (tableName: string, setter: (data: any) => void, initial: any) => {
     try {
       const { data, error } = await supabase.from(tableName).select('*');
-      
       if (error) {
-        const isTableMissing = error.code === 'PGRST116' || error.code === '42P01' || error.message?.toLowerCase().includes('schema cache');
-        if (isTableMissing) {
-          setDbStatus(prev => ({ ...prev, [tableName]: 'offline' }));
-          setter(initial || []);
-        } else {
-          setter(initial || []);
-        }
+        setDbStatus(prev => ({ ...prev, [tableName]: 'offline' }));
+        setter(initial || []);
         return;
       }
-
       setDbStatus(prev => ({ ...prev, [tableName]: 'online' }));
       if (data && data.length > 0) {
         if (tableName === 'settings') setter(data[0]);
@@ -110,9 +102,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'attendance': () => fetchTable('attendance', setAttendance, []),
         'settings': () => fetchTable('settings', setSettings, INITIAL_SETTINGS),
         'admins': () => fetchTable('admins', setAdmins, INITIAL_ADMINS),
-        'holidays': () => fetchTable('holidays', setHolidays, INITIAL_HOLIDAYS),
-        'notifications': () => fetchTable('notifications', setNotifications, INITIAL_NOTIFICATIONS),
-        'templates': () => fetchTable('templates', setTemplates, INITIAL_TEMPLATES)
       };
       if (map[tableName]) await map[tableName]();
     }
@@ -136,36 +125,98 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => { supabase.removeChannel(channel); };
   }, [refreshData]);
 
-  // Operations
-  const addCenter = async (c: Center) => { await supabase.from('centers').insert(c); };
-  const updateCenter = async (c: Center) => { await supabase.from('centers').update(c).eq('id', c.id); };
-  const deleteCenter = async (id: string) => { await supabase.from('centers').delete().eq('id', id); };
-  const addEmployee = async (e: Employee) => { await supabase.from('employees').insert(e); };
-  const updateEmployee = async (e: Employee) => { await supabase.from('employees').update(e).eq('id', e.id); };
-  const deleteEmployee = async (id: string) => { await supabase.from('employees').delete().eq('id', id); };
-  const addAttendance = async (r: AttendanceRecord) => { await supabase.from('attendance').insert(r); };
-  const updateAttendance = async (r: AttendanceRecord) => { await supabase.from('attendance').update(r).eq('id', r.id); };
-  const addNotification = async (n: Notification) => { await supabase.from('notifications').insert(n); };
-  const deleteNotification = async (id: string) => { await supabase.from('notifications').delete().eq('id', id); };
-  const updateTemplate = async (t: MessageTemplate) => { await supabase.from('templates').update(t).eq('id', t.id); };
+  // Operations with Local State Priority (Optimistic)
+  const addCenter = async (c: Center) => {
+    setCenters(prev => [...prev, c]);
+    await supabase.from('centers').insert(c);
+  };
+
+  const updateCenter = async (c: Center) => {
+    setCenters(prev => prev.map(item => item.id === c.id ? c : item));
+    await supabase.from('centers').update(c).eq('id', c.id);
+  };
+
+  const deleteCenter = async (id: string) => {
+    setCenters(prev => prev.filter(item => item.id !== id));
+    await supabase.from('centers').delete().eq('id', id);
+  };
+
+  const addEmployee = async (e: Employee) => {
+    setEmployees(prev => [...prev, e]);
+    await supabase.from('employees').insert(e);
+  };
+
+  const updateEmployee = async (e: Employee) => {
+    setEmployees(prev => prev.map(item => item.id === e.id ? e : item));
+    await supabase.from('employees').update(e).eq('id', e.id);
+  };
+
+  const deleteEmployee = async (id: string) => {
+    setEmployees(prev => prev.filter(item => item.id !== id));
+    await supabase.from('employees').delete().eq('id', id);
+  };
+
+  const addAttendance = async (r: AttendanceRecord) => {
+    setAttendance(prev => [...prev, r]);
+    await supabase.from('attendance').insert(r);
+  };
+
+  const updateAttendance = async (r: AttendanceRecord) => {
+    setAttendance(prev => prev.map(item => item.id === r.id ? r : item));
+    await supabase.from('attendance').update(r).eq('id', r.id);
+  };
+
+  const addNotification = async (n: Notification) => {
+    setNotifications(prev => [...prev, n]);
+    await supabase.from('notifications').insert(n);
+  };
+
+  const deleteNotification = async (id: string) => {
+    setNotifications(prev => prev.filter(item => item.id !== id));
+    await supabase.from('notifications').delete().eq('id', id);
+  };
+
+  const updateTemplate = async (t: MessageTemplate) => {
+    setTemplates(prev => prev.map(item => item.id === t.id ? t : item));
+    await supabase.from('templates').update(t).eq('id', t.id);
+  };
+
   const updateSettings = async (s: SystemSettings) => { 
     setSettings(s);
     await supabase.from('settings').upsert({ id: 1, ...s }); 
   };
-  const addAdmin = async (a: Admin) => { await supabase.from('admins').insert(a); };
-  const updateAdmin = async (a: Admin) => { await supabase.from('admins').update(a).eq('id', a.id); };
-  const deleteAdmin = async (id: string) => { await supabase.from('admins').delete().eq('id', id); };
-  const addHoliday = async (h: Holiday) => { await supabase.from('holidays').insert(h); };
-  const deleteHoliday = async (id: string) => { await supabase.from('holidays').delete().eq('id', id); };
 
-  const importAppData = async (data: any) => { setIsLoading(true); setIsLoading(false); };
+  const addAdmin = async (a: Admin) => {
+    setAdmins(prev => [...prev, a]);
+    await supabase.from('admins').insert(a);
+  };
+
+  const updateAdmin = async (a: Admin) => {
+    setAdmins(prev => prev.map(item => item.id === a.id ? a : item));
+    await supabase.from('admins').update(a).eq('id', a.id);
+  };
+
+  const deleteAdmin = async (id: string) => {
+    setAdmins(prev => prev.filter(item => item.id !== id));
+    await supabase.from('admins').delete().eq('id', id);
+  };
+
+  const addHoliday = async (h: Holiday) => {
+    setHolidays(prev => [...prev, h]);
+    await supabase.from('holidays').insert(h);
+  };
+
+  const deleteHoliday = async (id: string) => {
+    setHolidays(prev => prev.filter(item => item.id !== id));
+    await supabase.from('holidays').delete().eq('id', id);
+  };
 
   return (
     <AppContext.Provider value={{
       centers, employees, admins, attendance, holidays, notifications, templates, settings, currentUser, isLoading, isRealtimeConnected, dbStatus,
       setCurrentUser, addCenter, updateCenter, deleteCenter, addEmployee, updateEmployee, deleteEmployee,
       addAttendance, updateAttendance, addNotification, deleteNotification, updateTemplate, updateSettings,
-      addAdmin, updateAdmin, deleteAdmin, addHoliday, deleteHoliday, importAppData, refreshData, testConnection
+      addAdmin, updateAdmin, deleteAdmin, addHoliday, deleteHoliday, refreshData, testConnection
     }}>
       {children}
     </AppContext.Provider>
